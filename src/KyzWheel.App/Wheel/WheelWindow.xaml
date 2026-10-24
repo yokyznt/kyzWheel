@@ -39,6 +39,13 @@
                 </Ellipse.Stroke>
             </Ellipse>
             <StackPanel x:Name="HubText" Canvas.ZIndex="2" Canvas.Left="148" Canvas.Top="148" Width="144" Height="144" IsHitTestVisible="False" Padding="14,0">
+                <Grid x:Name="HubThumbHost" Width="52" Height="52" Margin="0,16,0,6" HorizontalAlignment="Center" Visibility="Collapsed">
+                    <Border CornerRadius="12" Background="#14FFFFFF" BorderBrush="#33FFFFFF" BorderThickness="1" />
+                    <Image x:Name="HubThumb" Width="44" Height="44" Stretch="Uniform" />
+                    <Border x:Name="HubCount" CornerRadius="9" MinWidth="18" Height="18" Padding="5,0" Background="#F2FFFFFF" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,-6,-8,0" Visibility="Collapsed">
+                        <TextBlock x:Name="HubCountText" FontSize="10.5" FontWeight="SemiBold" Foreground="#FF0B0B10" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </Border>
+                </Grid>
                 <TextBlock x:Name="HubTitle" Margin="0,50,0,0" HorizontalAlignment="Center" TextAlignment="Center" TextTrimming="CharacterEllipsis" Foreground="#F5FFFFFF" FontSize="15" FontWeight="SemiBold" CharacterSpacing="-10" />
                 <TextBlock x:Name="HubSub" HorizontalAlignment="Center" TextAlignment="Center" TextTrimming="CharacterEllipsis" Foreground="#73FFFFFF" FontSize="10.5" Margin="0,3,0,0" CharacterSpacing="20" />
                 <StackPanel x:Name="Dots" Orientation="Horizontal" HorizontalAlignment="Center" Spacing="5" Margin="0,9,0,0" />

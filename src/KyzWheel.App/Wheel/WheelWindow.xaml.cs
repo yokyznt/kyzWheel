@@ -37,6 +37,7 @@ public sealed partial class WheelWindow : Window
     private bool _activeSinceShow;
     private long _shownAt;
     private IReadOnlyList<string> _dragFiles = [];
+    private string? _hubDefault;
     private Stopwatch? _perf;
 
     public event Action<WheelItem>? ItemInvoked;
@@ -81,7 +82,7 @@ public sealed partial class WheelWindow : Window
                 _activeSinceShow = true;
                 return;
             }
-            if (_mode == WheelMode.Root && _shown && _activeSinceShow && Environment.TickCount64 - _shownAt > 400) HideAnimated();
+            if (_mode != WheelMode.Drag && _shown && _activeSinceShow && Environment.TickCount64 - _shownAt > 400) HideAnimated();
         };
         AppWindow.Closing += (_, e) =>
         {
@@ -111,14 +112,57 @@ public sealed partial class WheelWindow : Window
 
     public void ShowRoot(int x, int y, WheelPage page, Stopwatch? perf = null)
     {
+        ClearHubFile();
+        _dragFiles = [];
         _mode = WheelMode.Root;
         _pages = [page];
         _page = 0;
         Present(x, y, true, perf);
     }
 
+    public void ShowFiles(int x, int y, IReadOnlyList<string> files, IReadOnlyList<WheelPage> pages, Stopwatch? perf = null)
+    {
+        _mode = WheelMode.Files;
+        _dragFiles = files;
+        _pages = pages.Count > 0 ? pages : [new WheelPage("Sin acciones", [])];
+        _page = 0;
+        _hubDefault = files.Count == 1 ? System.IO.Path.GetFileName(files[0]) : $"{files.Count} archivos";
+        SetHubFile(files);
+        Present(x, y, true, perf);
+    }
+
+    private async void SetHubFile(IReadOnlyList<string> files)
+    {
+        HubThumbHost.Visibility = Visibility.Visible;
+        HubTitle.Margin = new Thickness(0, 0, 0, 0);
+        HubCount.Visibility = files.Count > 1 ? Visibility.Visible : Visibility.Collapsed;
+        HubCountText.Text = files.Count > 99 ? "99+" : files.Count.ToString();
+        HubThumb.Source = null;
+        try
+        {
+            var path = files[0];
+            Windows.Storage.FileProperties.StorageItemThumbnail thumb = Directory.Exists(path)
+                ? await (await StorageFolder.GetFolderFromPathAsync(path)).GetThumbnailAsync(Windows.Storage.FileProperties.ThumbnailMode.SingleItem, 96)
+                : await (await StorageFile.GetFileFromPathAsync(path)).GetThumbnailAsync(Windows.Storage.FileProperties.ThumbnailMode.SingleItem, 96);
+            var bmp = new Microsoft.UI.Xaml.Media.Imaging.BitmapImage();
+            await bmp.SetSourceAsync(thumb);
+            if (_mode == WheelMode.Files) HubThumb.Source = bmp;
+        }
+        catch (Exception)
+        {
+        }
+    }
+
+    private void ClearHubFile()
+    {
+        HubThumbHost.Visibility = Visibility.Collapsed;
+        HubTitle.Margin = new Thickness(0, 50, 0, 0);
+        _hubDefault = null;
+    }
+
     public void ShowDrag(int x, int y, bool tools, Stopwatch? perf = null)
     {
+        ClearHubFile();
         _mode = WheelMode.Drag;
         _wantTools = tools;
         _dropped = false;
@@ -264,8 +308,13 @@ public sealed partial class WheelWindow : Window
             Layer.Children.Add(group);
             _slices.Add(new SliceVisual(group, body, halo, badge, item));
         }
-        HubTitle.Text = n == 0 ? page.Title : page.Title;
-        HubSub.Text = n == 0 ? "" : _mode == WheelMode.Drag ? (_pages.Count > 1 ? "SHIFT · TAB CAMBIA" : "SUELTA EN UNA ACCIÓN") : "ESC PARA CERRAR";
+        HubTitle.Text = _hubDefault ?? page.Title;
+        HubSub.Text = _mode switch
+        {
+            WheelMode.Files => (_pages.Count > 1 ? page.Title + " · TAB" : page.Title).ToUpperInvariant(),
+            WheelMode.Drag => n == 0 ? "" : _pages.Count > 1 ? "SHIFT · TAB CAMBIA" : "SUELTA EN UNA ACCIÓN",
+            _ => "ESC PARA CERRAR",
+        };
         Dots.Children.Clear();
         if (_pages.Count > 1)
             for (var i = 0; i < _pages.Count; i++)
@@ -367,7 +416,7 @@ public sealed partial class WheelWindow : Window
         }
         else if (_pages.Count > 0)
         {
-            HubTitle.Text = _pages[_page].Title;
+            HubTitle.Text = _hubDefault ?? _pages[_page].Title;
         }
     }
 
@@ -381,7 +430,16 @@ public sealed partial class WheelWindow : Window
         {
             var item = _slices[idx].Item;
             WheelAnimations.Success(_slices[idx].Group);
-            ItemInvoked?.Invoke(item);
+            if (_mode == WheelMode.Files && _dragFiles.Count > 0)
+            {
+                FilesDropped?.Invoke(item, _dragFiles);
+                var t = DispatcherQueue.CreateTimer();
+                t.Interval = TimeSpan.FromMilliseconds(200);
+                t.IsRepeating = false;
+                t.Tick += (_, _) => HideAnimated();
+                t.Start();
+            }
+            else ItemInvoked?.Invoke(item);
             return;
         }
         var r = Math.Sqrt((p.X - C) * (p.X - C) + (p.Y - C) * (p.Y - C));

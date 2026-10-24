@@ -111,6 +111,14 @@ public partial class App : Application
             && Enum.TryParse<SlotType>(open, true, out var type)
             && _config.Slots.FirstOrDefault(s => s.Type == type) is { } slot)
             InvokeSlot(slot);
+        if (Environment.GetCommandLineArgs().SkipWhile(a => a != "--simulate-hotkey").Skip(1).FirstOrDefault() is { } ms && int.TryParse(ms, out var delay))
+        {
+            var t = _ui.CreateTimer();
+            t.Interval = TimeSpan.FromMilliseconds(delay);
+            t.IsRepeating = false;
+            t.Tick += (_, _) => OnHotkey("global");
+            t.Start();
+        }
         ScheduleTrim();
         _ = Task.Run(Updater.CheckAsync);
     }
@@ -288,7 +296,19 @@ public partial class App : Application
         var sw = Stopwatch.StartNew();
         if (id == "global")
         {
-            if (_wheel.IsShown && _wheel.Mode == WheelMode.Root) _wheel.HideAnimated();
+            if (_wheel.IsShown && _wheel.Mode != WheelMode.Drag)
+            {
+                _wheel.HideAnimated();
+                return;
+            }
+            var fg = KyzWheel.Platform.Shell.ShellSelection.Foreground();
+            var selected = KyzWheel.Platform.Shell.ShellSelection.Selected(fg);
+            if (selected.Count > 0)
+            {
+                _trimTimer?.Stop();
+                var (x, y) = User32.CursorPosition();
+                _wheel.ShowFiles(x, y, selected, DragPages(selected), sw);
+            }
             else OpenWheelAtCursor(sw);
             return;
         }

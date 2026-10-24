@@ -4,4 +4,4 @@ public sealed record WheelItem(string Id, string Label, string Glyph, string Col
 
 public sealed record WheelPage(string Title, IReadOnlyList<WheelItem> Items, object? Tag = null);
 
-public enum WheelMode { Root, Drag }
+public enum WheelMode { Root, Drag, Files }
