@@ -21,14 +21,17 @@ public static class ImageConversions
         new ImageFormatConversion("img.bmp", "BMP", "bmp", MagickFormat.Bmp, ["bmp"]),
         new ImageCompressor(),
         new MetadataStripper(),
+        new RemoveBackground(),
+        new AddBackground("tool.addbg", "Fondo blanco", "#FFFFFF"),
+        new AddBackground("tool.addbgblack", "Fondo negro", "#000000"),
     ];
 
     public static bool IsImage(string path) => Readable.Contains(FileGuards.Ext(path));
 
-    internal static ConversionResult Result(string src, string output)
+    public static ConversionResult Result(string src, string output)
         => new(src, output, new FileInfo(src).Length, new FileInfo(output).Length);
 
-    internal static MagickImageCollection Load(string path)
+    public static MagickImageCollection Load(string path)
     {
         FileGuards.EnsureLocal(path);
         try
