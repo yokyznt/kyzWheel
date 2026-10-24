@@ -10,7 +10,7 @@ public static class AutostartService
     public static void Enable(string guardExePath)
     {
         using var k = Registry.CurrentUser.CreateSubKey(RunKey);
-        k.SetValue(Name, $"\"{guardExePath}\"");
+        k.SetValue(Name, $"\"{guardExePath}\" --autostart");
     }
 
     public static void Disable()

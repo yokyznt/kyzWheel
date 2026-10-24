@@ -2,7 +2,7 @@ namespace KyzWheel.App.Shell;
 
 public static class Log
 {
-    public static string Dir { get; } = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "kyzWheel");
+    public static string Dir { get; } = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "kyzWheel.Data");
 
     private static readonly Lock Gate = new();
 

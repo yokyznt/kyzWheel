@@ -10,6 +10,9 @@
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
+    <ApplicationIcon>..\KyzWheel.App\Assets\kyzWheel.ico</ApplicationIcon>
+    <Product>kyzWheel</Product>
+    <AssemblyTitle>kyzWheel</AssemblyTitle>
     <SelfContained>true</SelfContained>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
