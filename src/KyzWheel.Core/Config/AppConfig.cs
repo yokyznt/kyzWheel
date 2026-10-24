@@ -2,6 +2,8 @@ namespace KyzWheel.Core.Config;
 
 public sealed record AppConfig(int Version, string GlobalHotkey, IReadOnlyList<Slot> Slots, string AccentHex, bool StartWithWindows)
 {
+    public IReadOnlyList<MailAccount> MailAccounts { get; init; } = [];
+
     public const int MinSlots = 1;
     public const int MaxSlots = 8;
 
@@ -18,7 +20,8 @@ public sealed record AppConfig(int Version, string GlobalHotkey, IReadOnlyList<S
 
     public bool Equals(AppConfig? other) =>
         other is not null && Version == other.Version && GlobalHotkey == other.GlobalHotkey &&
-        AccentHex == other.AccentHex && StartWithWindows == other.StartWithWindows && Slots.SequenceEqual(other.Slots);
+        AccentHex == other.AccentHex && StartWithWindows == other.StartWithWindows && Slots.SequenceEqual(other.Slots) &&
+        (MailAccounts ?? []).SequenceEqual(other.MailAccounts ?? []);
 
     public override int GetHashCode() => HashCode.Combine(Version, GlobalHotkey, AccentHex, StartWithWindows, Slots.Count);
 }
