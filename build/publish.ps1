@@ -3,6 +3,12 @@ $ErrorActionPreference = "Stop"
 $root = Split-Path $PSScriptRoot -Parent
 $out = Join-Path $root "publish"
 if (Test-Path $out) { Remove-Item $out -Recurse -Force }
+$google = Join-Path $root "build\google-oauth.json"
+if (-not (Test-Path $google)) {
+  $dl = Get-ChildItem (Join-Path $env:USERPROFILE "Downloads") -Filter "client_secret_*.apps.googleusercontent.com*.json" -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+  if ($dl) { Copy-Item $dl.FullName $google -Force }
+}
+if (Test-Path $google) { Copy-Item $google (Join-Path $root "src\KyzWheel.App\Assets\google.json") -Force; Write-Host "google client bundled" } else { Write-Host "google client NOT bundled" }
 dotnet publish "$root\src\KyzWheel.App\KyzWheel.App.csproj" -c Release -r win-x64 --self-contained -p:Version=$Version -o $out
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 dotnet publish "$root\src\KyzWheel.Guard\KyzWheel.Guard.csproj" -c Release -r win-x64 --self-contained -p:Version=$Version -o $out

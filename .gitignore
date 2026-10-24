@@ -6,3 +6,5 @@ publish/
 Releases/
 .impeccable/hook.cache.json
 .superpowers/
+src/KyzWheel.App/Assets/google.json
+build/google-oauth.json

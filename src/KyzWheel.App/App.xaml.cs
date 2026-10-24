@@ -152,10 +152,35 @@ public partial class App : Application
         _ = Task.Run(Updater.CheckAsync);
     }
 
+    private static string? NonEmpty(string? s) => string.IsNullOrWhiteSpace(s) ? null : s;
+
+    private static (string? Id, string? Secret) _bundled;
+    private static bool _bundledRead;
+
+    private static (string? Id, string? Secret) BundledGoogleClient()
+    {
+        if (_bundledRead) return _bundled;
+        _bundledRead = true;
+        try
+        {
+            var p = Path.Combine(AppContext.BaseDirectory, "Assets", "google.json");
+            if (!File.Exists(p)) return _bundled;
+            using var doc = System.Text.Json.JsonDocument.Parse(File.ReadAllText(p));
+            var root = doc.RootElement;
+            var c = root.TryGetProperty("installed", out var i) ? i : root;
+            _bundled = (c.GetProperty("client_id").GetString(), c.GetProperty("client_secret").GetString());
+        }
+        catch (Exception e) when (e is IOException or System.Text.Json.JsonException or KeyNotFoundException or InvalidOperationException)
+        {
+        }
+        return _bundled;
+    }
+
     private IReadOnlyList<string> ApplyConfig(AppConfig cfg)
     {
-        KyzWheel.Mail.GoogleOAuth.ClientId = cfg.GoogleClientId ?? Environment.GetEnvironmentVariable("KYZ_GOOGLE_CLIENT_ID");
-        KyzWheel.Mail.GoogleOAuth.ClientSecret = cfg.GoogleClientSecret ?? Environment.GetEnvironmentVariable("KYZ_GOOGLE_CLIENT_SECRET");
+        var bundled = BundledGoogleClient();
+        KyzWheel.Mail.GoogleOAuth.ClientId = NonEmpty(cfg.GoogleClientId) ?? Environment.GetEnvironmentVariable("KYZ_GOOGLE_CLIENT_ID") ?? bundled.Id;
+        KyzWheel.Mail.GoogleOAuth.ClientSecret = NonEmpty(cfg.GoogleClientSecret) ?? Environment.GetEnvironmentVariable("KYZ_GOOGLE_CLIENT_SECRET") ?? bundled.Secret;
         var errors = new List<string>();
         _hotkeys!.UnregisterAll();
         if (Hotkey.TryParse(cfg.GlobalHotkey, out var g) && !_hotkeys.Register("global", g))
