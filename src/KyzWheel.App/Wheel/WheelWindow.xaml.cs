@@ -180,6 +180,15 @@ public sealed partial class WheelWindow : Window
         try
         {
             var path = files[0];
+            if (path.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase) && await PdfPreview(path) is { } pdf)
+            {
+                if (token != _previewToken || _dragFiles.Count == 0) return;
+                HubPreviewBrush.AlignmentY = AlignmentY.Top;
+                HubPreviewBrush.ImageSource = pdf;
+                HubPreview.Visibility = Visibility.Visible;
+                HubThumb.Visibility = Visibility.Collapsed;
+                return;
+            }
             Windows.Storage.FileProperties.StorageItemThumbnail thumb = Directory.Exists(path)
                 ? await (await StorageFolder.GetFolderFromPathAsync(path)).GetThumbnailAsync(Windows.Storage.FileProperties.ThumbnailMode.SingleItem, 320, Windows.Storage.FileProperties.ThumbnailOptions.ResizeThumbnail)
                 : await (await StorageFile.GetFileFromPathAsync(path)).GetThumbnailAsync(Windows.Storage.FileProperties.ThumbnailMode.SingleItem, 320, Windows.Storage.FileProperties.ThumbnailOptions.ResizeThumbnail);
@@ -188,6 +197,7 @@ public sealed partial class WheelWindow : Window
             if (token != _previewToken || _dragFiles.Count == 0) return;
             if (thumb.Type == Windows.Storage.FileProperties.ThumbnailType.Image)
             {
+                HubPreviewBrush.AlignmentY = AlignmentY.Center;
                 HubPreviewBrush.ImageSource = bmp;
                 HubPreview.Visibility = Visibility.Visible;
                 HubThumb.Visibility = Visibility.Collapsed;
@@ -200,6 +210,26 @@ public sealed partial class WheelWindow : Window
     }
 
     private int _previewToken;
+
+    private static async Task<Microsoft.UI.Xaml.Media.Imaging.BitmapImage?> PdfPreview(string path)
+    {
+        try
+        {
+            var doc = await Windows.Data.Pdf.PdfDocument.LoadFromFileAsync(await StorageFile.GetFileFromPathAsync(path));
+            if (doc.PageCount == 0) return null;
+            using var page = doc.GetPage(0);
+            using var stream = new Windows.Storage.Streams.InMemoryRandomAccessStream();
+            await page.RenderToStreamAsync(stream, new Windows.Data.Pdf.PdfPageRenderOptions { DestinationWidth = 320, BackgroundColor = Colors.White });
+            stream.Seek(0);
+            var bmp = new Microsoft.UI.Xaml.Media.Imaging.BitmapImage();
+            await bmp.SetSourceAsync(stream);
+            return bmp;
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
 
     private void ClearHubFile()
     {
