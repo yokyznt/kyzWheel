@@ -11,6 +11,7 @@ public static partial class Program
 
     public static int Main(string[] args)
     {
+        Velopack.VelopackApp.Build().Run();
         using var mutex = new Mutex(true, @"Local\kyzWheel.guard", out var first);
         if (!first) return 0;
         var app = Path.Combine(AppContext.BaseDirectory, "KyzWheel.App.exe");

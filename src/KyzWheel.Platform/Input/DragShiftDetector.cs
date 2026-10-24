@@ -33,7 +33,7 @@ public sealed partial class DragShiftDetector
         {
             case MouseKind.LeftDown:
                 _shiftAtStart = IsDown(VK_SHIFT);
-                _shellSource = IsShellAt(e.X, e.Y);
+                _shellSource = !KyzWheel.Platform.Native.Foreground.IsFullscreenAppActive() && IsShellAt(e.X, e.Y);
                 Emit(GestureInput.LeftDown);
                 return false;
             case MouseKind.Move:

@@ -19,8 +19,11 @@ public static partial class Foreground
     [return: MarshalAs(UnmanagedType.Bool)]
     private static partial bool BringWindowToTop(nint hwnd);
 
-    [LibraryImport("user32.dll")]
-    private static partial void keybd_event(byte vk, byte scan, uint flags, nint extra);
+    [LibraryImport("shell32.dll")]
+    private static partial int SHQueryUserNotificationState(out int state);
+
+    public static bool IsFullscreenAppActive()
+        => SHQueryUserNotificationState(out var s) == 0 && s is 2 or 3 or 4;
 
     public static bool Force(nint hwnd)
     {
@@ -31,12 +34,7 @@ public static partial class Foreground
         var attached = fgThread != 0 && fgThread != me && AttachThreadInput(me, fgThread, true);
         try
         {
-            if (!SetForegroundWindow(hwnd))
-            {
-                keybd_event(0x12, 0, 0, 0);
-                keybd_event(0x12, 0, 2, 0);
-                SetForegroundWindow(hwnd);
-            }
+            SetForegroundWindow(hwnd);
             BringWindowToTop(hwnd);
         }
         finally

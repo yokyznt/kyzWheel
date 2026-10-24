@@ -90,6 +90,7 @@ public partial class App : Application
             _wheel.ShowRoot(int.Parse(p[0]), int.Parse(p[1]), RootPage(), Stopwatch.StartNew());
         }
         ScheduleTrim();
+        _ = Task.Run(Updater.CheckAsync);
     }
 
     private IReadOnlyList<string> ApplyConfig(AppConfig cfg)
@@ -150,6 +151,7 @@ public partial class App : Application
     private void OnHotkey(string id)
     {
         if (_paused) return;
+        if (Foreground.IsFullscreenAppActive() && !_wheel.IsShown) return;
         var sw = Stopwatch.StartNew();
         if (id == "global")
         {
