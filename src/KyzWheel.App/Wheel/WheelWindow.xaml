@@ -3,8 +3,8 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
     <Grid x:Name="Root" Background="Transparent" AllowDrop="True" IsTabStop="True" RequestedTheme="Dark">
-        <Canvas x:Name="Stage" Width="440" Height="440">
-            <Ellipse x:Name="Glow" Width="440" Height="440" IsHitTestVisible="False">
+        <Canvas x:Name="Stage" Width="360" Height="360">
+            <Ellipse x:Name="Glow" Width="360" Height="360" IsHitTestVisible="False">
                 <Ellipse.Fill>
                     <RadialGradientBrush>
                         <GradientStop Color="#99000000" Offset="0.84" />
@@ -13,12 +13,12 @@
                     </RadialGradientBrush>
                 </Ellipse.Fill>
             </Ellipse>
-            <Canvas x:Name="Layer" Width="440" Height="440" />
-            <Canvas x:Name="Pointer" Width="440" Height="440" Opacity="0" IsHitTestVisible="False">
-                <Path x:Name="PointerArc" StrokeThickness="3" StrokeStartLineCap="Round" StrokeEndLineCap="Round" Data="M 195.4,82.8 A 140,140 0 0 1 244.6,82.8" />
-                <Ellipse x:Name="PointerDot" Canvas.Left="215" Canvas.Top="74" Width="10" Height="10" />
+            <Canvas x:Name="Layer" Width="360" Height="360" />
+            <Canvas x:Name="Pointer" Width="360" Height="360" Opacity="0" IsHitTestVisible="False">
+                <Path x:Name="PointerArc" StrokeThickness="3" StrokeStartLineCap="Round" StrokeEndLineCap="Round" Data="M 160.4,68.8 A 113,113 0 0 1 199.6,68.8" />
+                <Ellipse x:Name="PointerDot" Canvas.Left="176" Canvas.Top="58" Width="8" Height="8" />
             </Canvas>
-            <Ellipse x:Name="Rim" Canvas.Left="24" Canvas.Top="24" Width="392" Height="392" StrokeThickness="1" IsHitTestVisible="False">
+            <Ellipse x:Name="Rim" Canvas.Left="20" Canvas.Top="20" Width="320" Height="320" StrokeThickness="1" IsHitTestVisible="False">
                 <Ellipse.Stroke>
                     <LinearGradientBrush StartPoint="0.5,0" EndPoint="0.5,1">
                         <GradientStop Color="#40FFFFFF" Offset="0" />
@@ -27,8 +27,8 @@
                     </LinearGradientBrush>
                 </Ellipse.Stroke>
             </Ellipse>
-            <Ellipse x:Name="HubSheen" Canvas.Left="148" Canvas.Top="148" Width="144" Height="144" IsHitTestVisible="False" Canvas.ZIndex="1" />
-            <Ellipse x:Name="Hub" Canvas.Left="148" Canvas.Top="148" Width="144" Height="144" IsHitTestVisible="False">
+            <Ellipse x:Name="HubSheen" Canvas.Left="124" Canvas.Top="124" Width="112" Height="112" IsHitTestVisible="False" Canvas.ZIndex="1" />
+            <Ellipse x:Name="Hub" Canvas.Left="124" Canvas.Top="124" Width="112" Height="112" IsHitTestVisible="False">
                 <Ellipse.Fill>
                     <LinearGradientBrush StartPoint="0.5,0" EndPoint="0.5,1">
                         <GradientStop Color="#FF17171E" Offset="0" />
@@ -42,16 +42,16 @@
                     </LinearGradientBrush>
                 </Ellipse.Stroke>
             </Ellipse>
-            <StackPanel x:Name="HubText" Canvas.ZIndex="2" Canvas.Left="148" Canvas.Top="148" Width="144" Height="144" IsHitTestVisible="False" Padding="14,0">
-                <Grid x:Name="HubThumbHost" Width="52" Height="52" Margin="0,16,0,6" HorizontalAlignment="Center" Visibility="Collapsed">
+            <StackPanel x:Name="HubText" Canvas.ZIndex="2" Canvas.Left="124" Canvas.Top="124" Width="112" Height="112" IsHitTestVisible="False" Padding="10,0">
+                <Grid x:Name="HubThumbHost" Width="44" Height="44" Margin="0,12,0,4" HorizontalAlignment="Center" Visibility="Collapsed">
                     <Border CornerRadius="12" Background="#14FFFFFF" BorderBrush="#33FFFFFF" BorderThickness="1" />
-                    <Image x:Name="HubThumb" Width="44" Height="44" Stretch="Uniform" />
+                    <Image x:Name="HubThumb" Width="38" Height="38" Stretch="Uniform" />
                     <Border x:Name="HubCount" CornerRadius="9" MinWidth="18" Height="18" Padding="5,0" Background="#F2FFFFFF" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,-6,-8,0" Visibility="Collapsed">
                         <TextBlock x:Name="HubCountText" FontSize="10.5" FontWeight="SemiBold" Foreground="#FF0B0B10" HorizontalAlignment="Center" VerticalAlignment="Center" />
                     </Border>
                 </Grid>
-                <TextBlock x:Name="HubTitle" Margin="0,50,0,0" HorizontalAlignment="Center" TextAlignment="Center" TextTrimming="CharacterEllipsis" Foreground="#F5FFFFFF" FontSize="15" FontWeight="SemiBold" CharacterSpacing="-10" />
-                <TextBlock x:Name="HubSub" HorizontalAlignment="Center" TextAlignment="Center" TextTrimming="CharacterEllipsis" Foreground="#73FFFFFF" FontSize="10.5" Margin="0,3,0,0" CharacterSpacing="20" />
+                <TextBlock x:Name="HubTitle" Margin="0,38,0,0" HorizontalAlignment="Center" TextAlignment="Center" TextTrimming="CharacterEllipsis" Foreground="#F5FFFFFF" FontFamily="ms-appx:///Assets/Fonts/Outfit.ttf#Outfit" FontSize="14" FontWeight="SemiBold" CharacterSpacing="-6" />
+                <TextBlock x:Name="HubSub" HorizontalAlignment="Center" TextAlignment="Center" TextTrimming="CharacterEllipsis" FontFamily="ms-appx:///Assets/Fonts/Outfit.ttf#Outfit" Foreground="#73FFFFFF" FontSize="9" Margin="0,2,0,0" CharacterSpacing="60" />
                 <StackPanel x:Name="Dots" Orientation="Horizontal" HorizontalAlignment="Center" Spacing="5" Margin="0,9,0,0" />
             </StackPanel>
         </Canvas>

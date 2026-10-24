@@ -18,11 +18,13 @@ namespace KyzWheel.App.Wheel;
 
 public sealed partial class WheelWindow : Window
 {
-    private const double Size = 440;
+    private const double Size = 360;
     private const double C = Size / 2;
-    private const double Ro = 196;
-    private const double Ri = 76;
-    private const double GapDeg = 0.9;
+    private const double Ro = 160;
+    private const double Ri = 62;
+    private const double GapPx = 5;
+    private const double CornerOut = 14;
+    private const double CornerIn = 9;
 
     private sealed record SliceVisual(Canvas Group, Path Body, Path Halo, Border Badge, WheelItem Item);
 
@@ -118,8 +120,8 @@ public sealed partial class WheelWindow : Window
     {
         _pages = [page];
         _page = 0;
-        AppWindow.MoveAndResize(new Windows.Graphics.RectInt32(-32000, -32000, 440, 440));
-        Dwm.ClipCircle(this.GetWindowHandle(), 440, Ro + 1);
+        AppWindow.MoveAndResize(new Windows.Graphics.RectInt32(-32000, -32000, (int)Size, (int)Size));
+        Dwm.ClipCircle(this.GetWindowHandle(), (int)Size, Ro + 1);
         BuildPage(0);
         AppWindow.Show(false);
         WheelAnimations.Open(Stage, _slices.Select(s => (UIElement)s.Group).ToList());
@@ -181,7 +183,7 @@ public sealed partial class WheelWindow : Window
     private void ClearHubFile()
     {
         HubThumbHost.Visibility = Visibility.Collapsed;
-        HubTitle.Margin = new Thickness(0, 50, 0, 0);
+        HubTitle.Margin = new Thickness(0, 38, 0, 0);
         _hubDefault = null;
     }
 
@@ -367,18 +369,18 @@ public sealed partial class WheelWindow : Window
             group.Children.Add(halo);
             var mid = n == 1 ? 180 : WheelGeometry.SliceArc(i, n).startDeg + 180.0 / n;
             var (mx, my) = Polar(mid, (Ro + Ri) / 2);
-            var content = new StackPanel { Width = 104, Spacing = 7, IsHitTestVisible = false };
-            var chip = new Grid { Width = 42, Height = 42, HorizontalAlignment = HorizontalAlignment.Center };
+            var content = new StackPanel { Width = 88, Spacing = 5, IsHitTestVisible = false };
+            var chip = new Grid { Width = 34, Height = 34, HorizontalAlignment = HorizontalAlignment.Center };
             chip.Children.Add(new Ellipse { Fill = new SolidColorBrush(ColorHelper.FromArgb(0x24, color.R, color.G, color.B)), Stroke = new SolidColorBrush(ColorHelper.FromArgb(0x40, color.R, color.G, color.B)), StrokeThickness = 1 });
-            chip.Children.Add(new FontIcon { Glyph = item.Glyph, FontSize = 19, Foreground = new SolidColorBrush(color), FontFamily = new FontFamily("Segoe Fluent Icons,Segoe MDL2 Assets") });
+            chip.Children.Add(new FontIcon { Glyph = item.Glyph, FontSize = 16, Foreground = new SolidColorBrush(color), FontFamily = new FontFamily("Segoe Fluent Icons,Segoe MDL2 Assets") });
             content.Children.Add(chip);
-            content.Children.Add(new TextBlock { Text = item.Label, FontSize = 12, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, CharacterSpacing = 10, Foreground = new SolidColorBrush(ColorHelper.FromArgb(0xE0, 0xFF, 0xFF, 0xFF)), HorizontalAlignment = HorizontalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis, MaxWidth = 100 });
-            Canvas.SetLeft(content, mx - 52);
-            Canvas.SetTop(content, my - 34);
+            content.Children.Add(new TextBlock { Text = item.Label, FontFamily = KyzWheel.App.Shell.Ui.Font, FontSize = 12, FontWeight = Microsoft.UI.Text.FontWeights.Medium, CharacterSpacing = 0, Foreground = new SolidColorBrush(ColorHelper.FromArgb(0xE0, 0xFF, 0xFF, 0xFF)), HorizontalAlignment = HorizontalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis, MaxWidth = 84 });
+            Canvas.SetLeft(content, mx - 44);
+            Canvas.SetTop(content, my - 28);
             group.Children.Add(content);
-            var badge = new Border { MinWidth = 18, Height = 18, CornerRadius = new CornerRadius(9), Background = new SolidColorBrush(color), Padding = new Thickness(5, 0, 5, 0), IsHitTestVisible = false, Child = new TextBlock { FontSize = 10.5, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Foreground = new SolidColorBrush(Colors.Black), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center } };
-            Canvas.SetLeft(badge, mx + 8);
-            Canvas.SetTop(badge, my - 40);
+            var badge = new Border { MinWidth = 18, Height = 18, CornerRadius = new CornerRadius(9), Background = new SolidColorBrush(color), Padding = new Thickness(5, 0, 5, 0), IsHitTestVisible = false, Child = new TextBlock { FontFamily = KyzWheel.App.Shell.Ui.Font, FontSize = 10.5, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Foreground = new SolidColorBrush(Colors.Black), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center } };
+            Canvas.SetLeft(badge, mx + 6);
+            Canvas.SetTop(badge, my - 33);
             ApplyBadge(badge, item.Badge);
             WheelAnimations.SetCenter(badge, 9, 9);
             group.Children.Add(badge);
@@ -461,17 +463,32 @@ public sealed partial class WheelWindow : Window
             return g;
         }
         var (start, sweep) = WheelGeometry.SliceArc(i, n);
-        var s = start + GapDeg / 2;
-        var e = start + sweep - GapDeg / 2;
-        var large = e - s > 180;
-        var (ox1, oy1) = Polar(s, Ro);
-        var (ox2, oy2) = Polar(e, Ro);
-        var (ix2, iy2) = Polar(e, Ri);
-        var (ix1, iy1) = Polar(s, Ri);
-        var fig = new PathFigure { StartPoint = new Point(ox1, oy1), IsClosed = true };
-        fig.Segments.Add(new ArcSegment { Point = new Point(ox2, oy2), Size = new Size(Ro, Ro), SweepDirection = SweepDirection.Clockwise, IsLargeArc = large });
-        fig.Segments.Add(new LineSegment { Point = new Point(ix2, iy2) });
-        fig.Segments.Add(new ArcSegment { Point = new Point(ix1, iy1), Size = new Size(Ri, Ri), SweepDirection = SweepDirection.Counterclockwise, IsLargeArc = large });
+        var gapOut = GapPx / 2 / Ro * 180 / Math.PI;
+        var gapIn = GapPx / 2 / Ri * 180 / Math.PI;
+        var so = start + gapOut;
+        var eo = start + sweep - gapOut;
+        var si = start + gapIn;
+        var ei = start + sweep - gapIn;
+        var dOut = CornerOut / Ro * 180 / Math.PI;
+        var dIn = CornerIn / Ri * 180 / Math.PI;
+        Point P(double deg, double r)
+        {
+            var (x, y) = Polar(deg, r);
+            return new Point(x, y);
+        }
+        double Lerp(double a, double b, double t) => a + (b - a) * t;
+        double EdgeAt(double sIn, double sOut, double r) => Lerp(sIn, sOut, (r - Ri) / (Ro - Ri));
+        var rOutEdge = Ro - CornerOut;
+        var rInEdge = Ri + CornerIn;
+        var fig = new PathFigure { StartPoint = P(EdgeAt(si, so, rInEdge), rInEdge), IsClosed = true };
+        fig.Segments.Add(new LineSegment { Point = P(EdgeAt(si, so, rOutEdge), rOutEdge) });
+        fig.Segments.Add(new QuadraticBezierSegment { Point1 = P(so, Ro), Point2 = P(so + dOut, Ro) });
+        fig.Segments.Add(new ArcSegment { Point = P(eo - dOut, Ro), Size = new Size(Ro, Ro), SweepDirection = SweepDirection.Clockwise, IsLargeArc = eo - so - 2 * dOut > 180 });
+        fig.Segments.Add(new QuadraticBezierSegment { Point1 = P(eo, Ro), Point2 = P(EdgeAt(ei, eo, rOutEdge), rOutEdge) });
+        fig.Segments.Add(new LineSegment { Point = P(EdgeAt(ei, eo, rInEdge), rInEdge) });
+        fig.Segments.Add(new QuadraticBezierSegment { Point1 = P(ei, Ri), Point2 = P(ei - dIn, Ri) });
+        fig.Segments.Add(new ArcSegment { Point = P(si + dIn, Ri), Size = new Size(Ri, Ri), SweepDirection = SweepDirection.Counterclockwise, IsLargeArc = ei - si - 2 * dIn > 180 });
+        fig.Segments.Add(new QuadraticBezierSegment { Point1 = P(si, Ri), Point2 = P(EdgeAt(si, so, rInEdge), rInEdge) });
         var pg = new PathGeometry();
         pg.Figures.Add(fig);
         return pg;
