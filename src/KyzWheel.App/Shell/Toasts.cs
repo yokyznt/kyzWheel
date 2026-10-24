@@ -8,13 +8,28 @@ namespace KyzWheel.App.Shell;
 public sealed class Toasts : IDisposable
 {
     private readonly ConcurrentDictionary<string, IReadOnlyList<string>> _outputs = new();
+
+    public event Action<string, string>? Clicked;
+
+    public event Action<string, string, string>? Replied;
     private bool _ready;
 
     public void Init()
     {
         try
         {
-            ToastNotificationManagerCompat.OnActivated += e => OnInvoked(ToastArguments.Parse(e.Argument));
+            ToastNotificationManagerCompat.OnActivated += e =>
+            {
+                var args = ToastArguments.Parse(e.Argument);
+                if (args.TryGetValue("kind", out var kind) && args.TryGetValue("id", out var id))
+                {
+                    args.TryGetValue("a", out var act);
+                    if (act == "reply" && e.UserInput.TryGetValue("reply", out var text) && text is string t && t.Trim().Length > 0) Replied?.Invoke(kind, id, t.Trim());
+                    else Clicked?.Invoke(kind, id);
+                    return;
+                }
+                OnInvoked(args);
+            };
             _ready = true;
         }
         catch (Exception e)
@@ -34,6 +49,18 @@ public sealed class Toasts : IDisposable
         {
             Log.Error(e);
         }
+    }
+
+    public void Message(string title, string body, string kind, string id, bool canReply)
+    {
+        var b = new ToastContentBuilder().AddArgument("kind", kind).AddArgument("id", id).AddArgument("a", "open").AddText(title).AddText(body);
+        if (canReply)
+        {
+            b.AddInputTextBox("reply", "Responder…");
+            b.AddButton(new ToastButton().SetContent("Enviar").AddArgument("kind", kind).AddArgument("id", id).AddArgument("a", "reply").SetBackgroundActivation());
+        }
+        b.AddButton(new ToastButton().SetContent("Abrir").AddArgument("kind", kind).AddArgument("id", id).AddArgument("a", "open").SetBackgroundActivation());
+        Show(b);
     }
 
     public void Info(string title, string body) => Show(new ToastContentBuilder().AddText(title).AddText(body));

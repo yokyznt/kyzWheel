@@ -104,8 +104,10 @@ public partial class App : Application
         _wa.ChatsChanged += () => _ = RefreshWaUnreadAsync();
         _wa.MessageArrived += (chat, msg) =>
         {
-            if (_config.Slots.Any(s => s.Type is SlotType.WhatsApp or SlotType.Messages && s.Notify)) _toasts.Info(chat.Name, msg.Text);
+            if (_config.Slots.Any(s => s.Type is SlotType.WhatsApp or SlotType.Messages && s.Notify)) _toasts.Message(chat.IsGroup && !string.IsNullOrEmpty(msg.Sender) ? $"{msg.Sender} · {chat.Name}" : chat.Name, msg.Text, "wa", chat.Jid, true);
         };
+        _toasts.Clicked += (kind, id) => _ui.TryEnqueue(() => OpenFromToast(kind, id));
+        _toasts.Replied += (kind, id, text) => _ui.TryEnqueue(() => _ = ReplyFromToastAsync(kind, id, text));
         _converter = new ConverterController(new ConversionCatalog([.. ImageConversions.All(), .. KyzWheel.Convert.Media.MediaConversions.All(), .. KyzWheel.Convert.Documents.PdfConversions.All()]), _toasts);
         _toasts.Init();
         KyzWheel.Convert.Documents.PdfConversions.EnsureFonts();
@@ -291,10 +293,46 @@ public partial class App : Application
         _tray?.SetTooltip(unread > 0 ? $"kyzWheel · {unread} sin leer" : "kyzWheel");
     }
 
+    private void OpenFromToast(string kind, string id)
+    {
+        try
+        {
+            if (kind == "wa")
+            {
+                var chat = _waChats.FirstOrDefault(c => c.Jid == id) ?? new KyzWheel.Core.WhatsApp.WaChat(id, id.Split('@')[0], "", DateTimeOffset.Now, 0, id.EndsWith("@g.us"));
+                ShowWhatsAppPanel(WaSlot, [], chat);
+            }
+            else if (kind == "mail")
+            {
+                var parts = id.Split('|');
+                var m = _mail.Inbox.Top(500).FirstOrDefault(x => x.Account == parts[0] && x.Uid.ToString() == parts.ElementAtOrDefault(1));
+                if (m is not null) OpenMail(m);
+                else ShowMailFeed();
+            }
+        }
+        catch (Exception e)
+        {
+            Log.Error(e);
+        }
+    }
+
+    private async Task ReplyFromToastAsync(string kind, string id, string text)
+    {
+        if (kind != "wa") return;
+        try
+        {
+            await _wa.SendTextAsync(id, text);
+        }
+        catch (Exception e) when (e is WaException or TimeoutException or InvalidOperationException)
+        {
+            _toasts.Info("No se envió", e.Message);
+        }
+    }
+
     private void OnMailArrived(MailSummary m)
     {
         if (_config.Slots.Any(s => s.Type is SlotType.Mail or SlotType.Messages && s.Notify) && m.Unread)
-            _toasts.Info(m.FromName, $"{m.Subject}\n{m.Preview}");
+            _toasts.Message(m.FromName.Length > 0 ? m.FromName : m.FromAddress, $"{m.Subject}\n{m.Preview}", "mail", $"{m.Account}|{m.Uid}", false);
     }
 
     private void ShowMailPanel(Slot s)
