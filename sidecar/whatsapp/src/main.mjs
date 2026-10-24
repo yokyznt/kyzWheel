@@ -10,11 +10,12 @@ const localData = process.env.LOCALAPPDATA ?? join(homedir(), 'AppData', 'Local'
 const authDir = process.env.KYZ_WA_AUTH ?? join(appData, 'kyzWheel', 'wa-auth')
 const storeFile = process.env.KYZ_WA_STORE ?? join(localData, 'kyzWheel.Data', 'wa-store.json')
 const downloads = process.env.KYZ_WA_DOWNLOADS ?? join(homedir(), 'Downloads', 'kyzWheel')
+const cacheDir = process.env.KYZ_WA_CACHE ?? join(localData, 'kyzWheel.Data', 'wa-cache')
 
 const out = (line) => process.stdout.write(line + '\n')
 const emit = (event, data) => out(encodeEvent(event, data))
 const store = createStore(storeFile)
-const conn = createConnection({ authDir, store, emit, downloads })
+const conn = createConnection({ authDir, store, emit, downloads, cacheDir })
 
 const dispatch = createDispatcher({
   status: async () => ({ ...conn.status(), unread: store.unreadTotal() }),
@@ -26,6 +27,8 @@ const dispatch = createDispatcher({
   'files.send': (p) => conn.sendFile(p),
   'files.recent': async ({ limit = 8 }) => store.recentFiles(limit),
   'media.download': (p) => conn.download(p),
+  'media.cache': (p) => conn.media(p),
+  'avatar.get': (p) => conn.avatar(p),
   'chats.read': (p) => conn.markRead(p),
   'contacts.search': async ({ q = '' }) => store.searchContacts(q),
 })

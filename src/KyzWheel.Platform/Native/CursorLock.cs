@@ -19,7 +19,24 @@ public static partial class CursorLock
     [return: MarshalAs(UnmanagedType.Bool)]
     private static partial bool SetCursorPos(int x, int y);
 
+    [LibraryImport("user32.dll")]
+    private static partial int ShowCursor([MarshalAs(UnmanagedType.Bool)] bool show);
+
+    private static int _hidden;
+
     public static bool Active { get; private set; }
+
+    public static void Hide()
+    {
+        if (_hidden > 0) return;
+        do _hidden++;
+        while (ShowCursor(false) >= 0 && _hidden < 8);
+    }
+
+    public static void Show()
+    {
+        for (; _hidden > 0; _hidden--) ShowCursor(true);
+    }
 
     public static void Lock(int left, int top, int right, int bottom)
     {

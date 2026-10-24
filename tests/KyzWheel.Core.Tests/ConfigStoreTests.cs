@@ -14,7 +14,7 @@ public sealed class ConfigStoreTests : IDisposable
     {
         var c = AppConfig.Default;
         Assert.Equal("Ctrl+Alt+Space", c.GlobalHotkey);
-        Assert.Equal(new[] { SlotType.WhatsApp, SlotType.Mail, SlotType.Converter, SlotType.Clipboard }, c.Slots.Select(s => s.Type));
+        Assert.Equal(new[] { SlotType.WhatsApp, SlotType.Mail, SlotType.Converter, SlotType.Clipboard, SlotType.Phone }, c.Slots.Select(s => s.Type));
         Assert.True(c.StartWithWindows);
     }
 
@@ -22,7 +22,7 @@ public sealed class ConfigStoreTests : IDisposable
     public void Missing_file_returns_default_and_writes_it()
     {
         var c = new ConfigStore(PathOf).Load();
-        Assert.Equal(4, c.Slots.Count);
+        Assert.Equal(5, c.Slots.Count);
         Assert.True(File.Exists(PathOf));
     }
 
@@ -53,7 +53,7 @@ public sealed class ConfigStoreTests : IDisposable
     {
         var store = new ConfigStore(PathOf);
         File.WriteAllText(PathOf, "{\"Version\":1,\"GlobalHotkey\":\"Alt+Q\",\"Slots\":[],\"AccentHex\":\"#FF8A3D\",\"StartWithWindows\":true}");
-        Assert.Equal(4, store.Load().Slots.Count);
+        Assert.Equal(5, store.Load().Slots.Count);
     }
 
     [Fact]
