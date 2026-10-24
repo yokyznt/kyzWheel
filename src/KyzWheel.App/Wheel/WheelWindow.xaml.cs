@@ -412,7 +412,8 @@ public sealed partial class WheelWindow : Window
             var t = KyzWheel.App.Shell.Theme.Current;
             var body = new Path { Data = geometry, Fill = KyzWheel.App.Shell.Theme.Vertical(t.SliceTop, t.SliceBottom), Stroke = KyzWheel.App.Shell.Theme.Edge(t.SliceStroke), StrokeThickness = 1 };
             var sheen = new Path { Data = SliceGeometry(i, n), Fill = KyzWheel.App.Shell.Theme.Sheen(), IsHitTestVisible = false };
-            var halo = new Path { Data = SliceGeometry(i, n), Fill = Vivid(color), Stroke = new SolidColorBrush(ColorHelper.FromArgb(0x80, 0xFF, 0xFF, 0xFF)), StrokeThickness = 1, Opacity = 0, IsHitTestVisible = false };
+            var halo = new Path { Data = SliceGeometry(i, n), Fill = Vivid(color), Stroke = new SolidColorBrush(ColorHelper.FromArgb(0x80, 0xFF, 0xFF, 0xFF)), StrokeThickness = 1, IsHitTestVisible = false };
+            Microsoft.UI.Xaml.Hosting.ElementCompositionPreview.GetElementVisual(halo).Opacity = 0;
             group.Children.Add(body);
             group.Children.Add(sheen);
             group.Children.Add(halo);
