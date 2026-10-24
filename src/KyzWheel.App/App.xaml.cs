@@ -90,6 +90,22 @@ public partial class App : Application
             _config = _config with { Slots = slots, PhoneSlotOffered = true };
             _store.Save(_config);
         }
+        if (!_config.ToolsOffered)
+        {
+            var slots = _config.Slots.ToList();
+            (string Id, string Name, string Glyph, string Color, SlotType Type)[] tools =
+            [
+                ("capture", "Captura", "\uE722", "#F472B6", SlotType.Capture),
+                ("projects", "Proyectos", "\uE943", "#A78BFA", SlotType.Projects),
+                ("hermes", "Hermes", "\uE99A", "#FBBF24", SlotType.Hermes),
+                ("music", "Música", "\uE8D6", "#1DB954", SlotType.Music),
+            ];
+            foreach (var t in tools)
+                if (slots.All(x => x.Type != t.Type) && slots.Count < AppConfig.MaxSlots)
+                    slots.Add(new Slot(t.Id, t.Name, t.Glyph, t.Color, t.Type, null, null, false));
+            _config = _config with { Slots = slots, ToolsOffered = true };
+            _store.Save(_config);
+        }
         Theme.Apply(_config.ThemeId);
         _mail = new MailService(new CredentialManagerStore(), _ui);
         _mail.Changed += UpdateBadges;
@@ -346,6 +362,124 @@ public partial class App : Application
         else ShowMailFeed();
     }
 
+    private readonly KyzWheel.App.Tools.MediaService _media = new();
+
+    private sealed record ProjectAction(KyzWheel.Core.Projects.ProjectInfo Project, string Kind);
+
+    private static IReadOnlyList<WheelItem> ProjectActions(KyzWheel.Core.Projects.ProjectInfo p, string color)
+    {
+        var list = new List<WheelItem>
+        {
+            new("pa:code:" + p.Name, "VS Code", "\uE943", color, 0, new ProjectAction(p, "code")),
+            new("pa:dir:" + p.Name, "Carpeta", "\uE838", color, 0, new ProjectAction(p, "dir")),
+            new("pa:term:" + p.Name, "Terminal", "\uE756", color, 0, new ProjectAction(p, "term")),
+        };
+        if (p.GitHubUrl is not null) list.Add(new("pa:gh:" + p.Name, "GitHub", "\uE774", color, 0, new ProjectAction(p, "gh")));
+        if (p.HasApkScript) list.Add(new("pa:apk:" + p.Name, "Compilar APK", "\uE8EA", color, 0, new ProjectAction(p, "apk")));
+        return list;
+    }
+
+    private void RunProjectAction(ProjectAction a)
+    {
+        try
+        {
+            var dir = a.Project.Path;
+            System.Diagnostics.ProcessStartInfo psi = a.Kind switch
+            {
+                "code" => new("cmd.exe", $"/c code \"{dir}\"") { CreateNoWindow = true, UseShellExecute = false },
+                "dir" => new("explorer.exe", $"\"{dir}\"") { UseShellExecute = true },
+                "term" => File.Exists(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Microsoft", "WindowsApps", "wt.exe"))
+                    ? new("wt.exe", $"-d \"{dir}\"") { UseShellExecute = true }
+                    : new("powershell.exe", "-NoExit") { WorkingDirectory = dir, UseShellExecute = true },
+                "gh" => new(a.Project.GitHubUrl!) { UseShellExecute = true },
+                _ => new("powershell.exe", "-NoExit -Command npm run android:apk") { WorkingDirectory = dir, UseShellExecute = true },
+            };
+            System.Diagnostics.Process.Start(psi);
+        }
+        catch (Exception e)
+        {
+            Log.Error(e);
+            _toasts.Info("Proyectos", "No se pudo abrir: " + e.Message);
+        }
+    }
+
+    private async Task MusicAsync(Func<Task<bool>> op)
+    {
+        if (!await op()) Notify("music", "", "Música", "No hay nada reproduciéndose", "#1DB954", "\uE8D6", null, true);
+        else if (_media.NowPlaying is { } np) Notify("music", "", _media.Playing ? "Sonando" : "En pausa", np, "#1DB954", "\uE8D6", null, true);
+    }
+
+    private string ClipText()
+    {
+        try
+        {
+            var view = Windows.ApplicationModel.DataTransfer.Clipboard.GetContent();
+            if (view.Contains(Windows.ApplicationModel.DataTransfer.StandardDataFormats.Text)) return view.GetTextAsync().AsTask().GetAwaiter().GetResult();
+        }
+        catch (Exception)
+        {
+        }
+        return _clips.History.Items.FirstOrDefault(c => c.Kind == KyzWheel.Core.Clipboard.ClipKind.Text)?.Text ?? "";
+    }
+
+    private void ShowTranslate(string text)
+    {
+        Func<string, Task>? toPhone = _phone.Installed ? t => PhoneAsync("Traducción enviada", () => _phone.SendTextAsync(t)) : null;
+        DockPanel("\uE8C1", "#38BDF8", "Traducir", "Español ↔ inglés", new KyzWheel.App.Tools.TranslatePanel(text, toPhone), []);
+    }
+
+    private async Task SnipAsync(bool ocr)
+    {
+        try
+        {
+            var path = await KyzWheel.App.Tools.ScreenTools.SnipAsync(TimeSpan.FromSeconds(60));
+            if (path is null) return;
+            if (ocr)
+            {
+                var text = await KyzWheel.App.Tools.ScreenTools.OcrAsync(path);
+                if (text.Trim().Length == 0)
+                {
+                    Notify("cap", "", "Copiar texto", "No encontré texto en el recorte", "#F472B6", "\uE8E9", null, true);
+                    return;
+                }
+                KyzWheel.App.Tools.ScreenTools.CopyText(text);
+                Notify("cap", "", "Texto copiado", text, "#F472B6", "\uE8E9", null, true);
+                return;
+            }
+            var (x, y) = User32.CursorPosition();
+            _wheel.ShowFiles(x, y, [path], [FileRootPage([path])], Stopwatch.StartNew());
+        }
+        catch (Exception e)
+        {
+            Log.Error(e);
+            Notify("cap", "", "Captura", "No se pudo: " + e.Message, "#F472B6", "\uE722", null, true);
+        }
+    }
+
+    private async Task FullShotAsync()
+    {
+        try
+        {
+            await Task.Delay(350);
+            var dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyPictures), "Screenshots");
+            var before = DateTime.UtcNow;
+            KyzWheel.Platform.Native.Keys.Chord(0x5B, 0x2C);
+            string? path = null;
+            for (var i = 0; i < 30 && path is null; i++)
+            {
+                await Task.Delay(200);
+                if (Directory.Exists(dir)) path = new DirectoryInfo(dir).EnumerateFiles("*.png").Where(f => f.CreationTimeUtc >= before.AddSeconds(-1)).OrderByDescending(f => f.CreationTimeUtc).FirstOrDefault()?.FullName;
+            }
+            if (path is null) return;
+            var (x, y) = User32.CursorPosition();
+            _wheel.ShowFiles(x, y, [path], [FileRootPage([path])], Stopwatch.StartNew());
+        }
+        catch (Exception e)
+        {
+            Log.Error(e);
+        }
+    }
+
     private void OpenFromToast(string kind, string id)
     {
         try
@@ -492,7 +626,7 @@ public partial class App : Application
 
     private WheelPage FileRootPage(IReadOnlyList<string> files)
     {
-        var items = _config.Slots.Where(s => s.Type != SlotType.Clipboard && s.Type != SlotType.OpenUrl).Select(SlotItem).ToList();
+        var items = _config.Slots.Where(s => s.Type is not (SlotType.Clipboard or SlotType.OpenUrl or SlotType.Capture or SlotType.Projects or SlotType.Music)).Select(SlotItem).ToList();
         if (!_config.Slots.Any(s => s.Type == SlotType.Converter))
             items.Insert(0, new WheelItem("slot:converter", "Convertir", "\uE8AB", "#FF8A3D", 0, new Slot("converter", "Convertir", "\uE8AB", "#FF8A3D", SlotType.Converter, null, null, false)));
         return new WheelPage(files.Count == 1 ? Path.GetFileName(files[0]) : $"{files.Count} archivos", items);
@@ -709,9 +843,30 @@ public partial class App : Application
                 ], s);
             case SlotType.Messages:
                 return new WheelPage(s.Name, [SlotItem(WaSlot), SlotItem(MailSlot)], s);
+            case SlotType.Capture:
+                return new WheelPage(s.Name,
+                [
+                    new("cap:snip", "Recortar", "\uE7A8", s.ColorHex, 0, "cap:snip"),
+                    new("cap:ocr", "Copiar texto", "\uE8E9", s.ColorHex, 0, "cap:ocr"),
+                    new("cap:full", "Pantalla", "\uE7F4", s.ColorHex, 0, "cap:full"),
+                    new("cap:clip", "Grabar clip", "\uE714", s.ColorHex, 0, "cap:clip"),
+                ], s);
+            case SlotType.Projects:
+                var projects = KyzWheel.Core.Projects.ProjectScanner.Scan();
+                if (projects.Count == 0) return null;
+                return new WheelPage(s.Name, projects.Select(pr => new WheelItem("proj:" + pr.Name, Short(pr.Name), "\uE8B7", s.ColorHex, 0, pr, ProjectActions(pr, s.ColorHex))).ToList(), s);
+            case SlotType.Music:
+                _ = _media.RefreshAsync();
+                return new WheelPage(_media.NowPlaying is { } np ? Short(np, 28) : s.Name,
+                [
+                    new("music:prev", "Anterior", "\uE892", s.ColorHex, 0, "music:prev"),
+                    new("music:toggle", _media.Playing ? "Pausa" : "Reproducir", _media.Playing ? "\uE769" : "\uE768", s.ColorHex, 0, "music:toggle"),
+                    new("music:next", "Siguiente", "\uE893", s.ColorHex, 0, "music:next"),
+                ], s);
             case SlotType.Phone when mode == WheelMode.Root && _phone.Installed:
                 return new WheelPage(s.Name,
                 [
+                    new("phone:recv", "Recibidos", "\uE896", s.ColorHex, 0, "phone:recv"),
                     new("phone:clip", "Portapapeles", "\uE77F", s.ColorHex, 0, "phone:clip"),
                     new("phone:file", "Archivo", "\uE8E5", s.ColorHex, 0, "phone:file"),
                     new("phone:shot", "Última captura", "\uE722", s.ColorHex, 0, "phone:shot"),
@@ -721,12 +876,14 @@ public partial class App : Application
             case SlotType.Clipboard when mode == WheelMode.Root:
                 var clips = _clips.History.Items;
                 if (clips.Count == 0) return null;
-                return new WheelPage(s.Name, clips.Select(c => new WheelItem("clip:" + c.Id, Short(c.Preview), c.Kind switch
+                var clipItems = new List<WheelItem> { new("clip:translate", "Traducir", "\uE8C1", s.ColorHex, 0, "clip:translate") };
+                clipItems.AddRange(clips.Select(c => new WheelItem("clip:" + c.Id, Short(c.Preview), c.Kind switch
                 {
                     KyzWheel.Core.Clipboard.ClipKind.Image => "\uEB9F",
                     KyzWheel.Core.Clipboard.ClipKind.Files => "\uE8B7",
                     _ => c.Pinned ? "\uE718" : "\uE8C8",
-                }, s.ColorHex, 0, c)).ToList(), s);
+                }, s.ColorHex, 0, c)));
+                return new WheelPage(s.Name, clipItems, s);
             default:
                 return null;
         }
@@ -947,6 +1104,46 @@ public partial class App : Application
                 _wheel.HideAnimated();
                 _ = PhoneAsync("Sonando", () => _phone.RingAsync());
                 break;
+            case "phone:recv":
+                {
+                    var recv = RecentFiles(1);
+                    var dl = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads");
+                    _wheel.HideAnimated();
+                    System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("explorer.exe", recv.Count > 0 && recv[0].StartsWith(dl, StringComparison.OrdinalIgnoreCase) ? $"/select,\"{recv[0]}\"" : $"\"{dl}\"") { UseShellExecute = true });
+                    break;
+                }
+            case "cap:snip":
+                _wheel.HideAnimated();
+                _ = SnipAsync(false);
+                break;
+            case "cap:ocr":
+                _wheel.HideAnimated();
+                _ = SnipAsync(true);
+                break;
+            case "cap:full":
+                _wheel.HideAnimated();
+                _ = FullShotAsync();
+                break;
+            case "cap:clip":
+                _wheel.HideAnimated();
+                KyzWheel.Platform.Native.Keys.Chord(0x5B, 0x12, 0x47);
+                break;
+            case "music:prev":
+                _ = MusicAsync(() => _media.PreviousAsync());
+                break;
+            case "music:toggle":
+                _ = MusicAsync(() => _media.ToggleAsync());
+                break;
+            case "music:next":
+                _ = MusicAsync(() => _media.NextAsync());
+                break;
+            case "clip:translate":
+                ShowTranslate(ClipText());
+                break;
+            case ProjectAction pa:
+                _wheel.HideAnimated();
+                RunProjectAction(pa);
+                break;
             case "phone:ping":
                 _wheel.HideAnimated();
                 _ = PhoneAsync("Aviso enviado", () => _phone.PingAsync("Hola desde kyzWheel"));
@@ -1005,6 +1202,9 @@ public partial class App : Application
                 case SlotType.Converter:
                     _wheel.HideAnimated();
                     OpenConverter();
+                    break;
+                case SlotType.Hermes:
+                    DockPanel("\uE99A", s.ColorHex, "Hermes", _wheel.Files.Count > 0 ? "Pregunta sobre el archivo" : "Pregunta lo que sea", new KyzWheel.App.Tools.HermesPanel(_wheel.Files.ToList()), []);
                     break;
                 case SlotType.Mail:
                     ShowMailPanel(s);

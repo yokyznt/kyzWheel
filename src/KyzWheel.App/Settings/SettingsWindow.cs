@@ -42,7 +42,7 @@ public sealed class SettingsWindow : GlassWindow
     private static readonly (SlotType Type, string Name)[] Types =
     [
         (SlotType.WhatsApp, "WhatsApp"), (SlotType.Mail, "Correo"), (SlotType.Converter, "Convertidor"),
-        (SlotType.LaunchApp, "Abrir app"), (SlotType.OpenUrl, "Abrir URL"), (SlotType.SendToFolder, "Enviar a carpeta"), (SlotType.Clipboard, "Portapapeles"), (SlotType.Phone, "Celular"), (SlotType.Messages, "Mensajes"),
+        (SlotType.LaunchApp, "Abrir app"), (SlotType.OpenUrl, "Abrir URL"), (SlotType.SendToFolder, "Enviar a carpeta"), (SlotType.Clipboard, "Portapapeles"), (SlotType.Phone, "Celular"), (SlotType.Messages, "Mensajes"), (SlotType.Capture, "Captura"), (SlotType.Projects, "Proyectos"), (SlotType.Hermes, "Hermes"), (SlotType.Music, "Música"),
     ];
 
     private readonly Func<AppConfig, IReadOnlyList<string>> _apply;
@@ -343,6 +343,10 @@ public sealed class SettingsWindow : GlassWindow
             SlotType.Clipboard => "\uE77F",
             SlotType.Phone => "\uE8EA",
             SlotType.Messages => "\uE8F2",
+            SlotType.Capture => "\uE722",
+            SlotType.Projects => "\uE943",
+            SlotType.Hermes => "\uE99A",
+            SlotType.Music => "\uE8D6",
             SlotType.OpenUrl => "\uE774",
             _ => "\uE8B7",
         };
@@ -394,7 +398,7 @@ public sealed class SettingsWindow : GlassWindow
             return;
         }
         var cfg = new AppConfig(1, _global.Value ?? "Ctrl+Alt+Space", _slots.Select(s => s.ToSlot()).ToList(),
-            KyzWheel.Core.Theming.Themes.Find(_themeId).Accent, _autostart.IsOn) { MailAccounts = _accounts.ToList(), ThemeId = _themeId, GoogleClientId = _base.GoogleClientId, GoogleClientSecret = _base.GoogleClientSecret, PhoneSlotOffered = _base.PhoneSlotOffered, MessagesMerged = _base.MessagesMerged };
+            KyzWheel.Core.Theming.Themes.Find(_themeId).Accent, _autostart.IsOn) { MailAccounts = _accounts.ToList(), ThemeId = _themeId, GoogleClientId = _base.GoogleClientId, GoogleClientSecret = _base.GoogleClientSecret, PhoneSlotOffered = _base.PhoneSlotOffered, MessagesMerged = _base.MessagesMerged, ToolsOffered = _base.ToolsOffered };
         var errors = ConfigStore.Validate(cfg);
         if (errors.Count == 0) errors = _apply(cfg);
         _status.Text = errors.Count == 0 ? "Guardado" : string.Join(" · ", errors);
