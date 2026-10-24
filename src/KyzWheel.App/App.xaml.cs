@@ -613,8 +613,6 @@ public partial class App : Application
                 [
                     new("msg:wa", "WhatsApp", "\uE8BD", "#25D366", _wa.Status.Unread, "msg:wa"),
                     new("msg:mail", "Gmail", "\uE715", "#EA4335", _mail.Inbox.UnreadCount, "msg:mail"),
-                    new("slot:" + WaSlot.Id, "Chats", "\uE8F2", "#25D366", 0, WaSlot),
-                    new("msg:compose", "Redactar", "\uE70F", "#EA4335", 0, "msg:compose"),
                 ], s);
             case SlotType.Messages:
                 return new WheelPage(s.Name, [SlotItem(WaSlot), SlotItem(MailSlot)], s);
