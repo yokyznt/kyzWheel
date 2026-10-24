@@ -14,7 +14,7 @@
                 </Ellipse.Fill>
             </Ellipse>
             <Canvas x:Name="Layer" Width="440" Height="440" />
-            <Ellipse Canvas.Left="24" Canvas.Top="24" Width="392" Height="392" StrokeThickness="1" IsHitTestVisible="False">
+            <Ellipse x:Name="Rim" Canvas.Left="24" Canvas.Top="24" Width="392" Height="392" StrokeThickness="1" IsHitTestVisible="False">
                 <Ellipse.Stroke>
                     <LinearGradientBrush StartPoint="0.5,0" EndPoint="0.5,1">
                         <GradientStop Color="#40FFFFFF" Offset="0" />
@@ -23,6 +23,7 @@
                     </LinearGradientBrush>
                 </Ellipse.Stroke>
             </Ellipse>
+            <Ellipse x:Name="HubSheen" Canvas.Left="148" Canvas.Top="148" Width="144" Height="144" IsHitTestVisible="False" Canvas.ZIndex="1" />
             <Ellipse x:Name="Hub" Canvas.Left="148" Canvas.Top="148" Width="144" Height="144" IsHitTestVisible="False">
                 <Ellipse.Fill>
                     <LinearGradientBrush StartPoint="0.5,0" EndPoint="0.5,1">
@@ -37,7 +38,7 @@
                     </LinearGradientBrush>
                 </Ellipse.Stroke>
             </Ellipse>
-            <StackPanel x:Name="HubText" Canvas.Left="148" Canvas.Top="148" Width="144" Height="144" IsHitTestVisible="False" Padding="14,0">
+            <StackPanel x:Name="HubText" Canvas.ZIndex="2" Canvas.Left="148" Canvas.Top="148" Width="144" Height="144" IsHitTestVisible="False" Padding="14,0">
                 <TextBlock x:Name="HubTitle" Margin="0,50,0,0" HorizontalAlignment="Center" TextAlignment="Center" TextTrimming="CharacterEllipsis" Foreground="#F5FFFFFF" FontSize="15" FontWeight="SemiBold" CharacterSpacing="-10" />
                 <TextBlock x:Name="HubSub" HorizontalAlignment="Center" TextAlignment="Center" TextTrimming="CharacterEllipsis" Foreground="#73FFFFFF" FontSize="10.5" Margin="0,3,0,0" CharacterSpacing="20" />
                 <StackPanel x:Name="Dots" Orientation="Horizontal" HorizontalAlignment="Center" Spacing="5" Margin="0,9,0,0" />

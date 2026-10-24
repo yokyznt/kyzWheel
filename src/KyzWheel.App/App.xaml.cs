@@ -66,7 +66,7 @@ public partial class App : Application
         }
         _ui = DispatcherQueue.GetForCurrentThread();
         _config = _store.Load();
-        Ui.ApplyAccent(_config.AccentHex);
+        Theme.Apply(_config.ThemeId);
         _mail = new MailService(new CredentialManagerStore(), _ui);
         _mail.Changed += UpdateBadges;
         _mail.Arrived += OnMailArrived;
@@ -107,6 +107,10 @@ public partial class App : Application
             var p = at.Split(',');
             _wheel.ShowRoot(int.Parse(p[0]), int.Parse(p[1]), RootPage(), Stopwatch.StartNew());
         }
+        if (Environment.GetCommandLineArgs().SkipWhile(a => a != "--open").Skip(1).FirstOrDefault() is { } open
+            && Enum.TryParse<SlotType>(open, true, out var type)
+            && _config.Slots.FirstOrDefault(s => s.Type == type) is { } slot)
+            InvokeSlot(slot);
         ScheduleTrim();
         _ = Task.Run(Updater.CheckAsync);
     }
@@ -127,6 +131,7 @@ public partial class App : Application
         }
         _config = cfg;
         _store.Save(cfg);
+        Theme.Apply(cfg.ThemeId);
         _mail.Sync(cfg.MailAccounts ?? []);
         if (cfg.Slots.Any(s => s.Type == SlotType.WhatsApp)) _wa.Start();
         else _ = _wa.DisposeAsync().AsTask();

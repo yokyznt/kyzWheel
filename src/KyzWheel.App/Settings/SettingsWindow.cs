@@ -47,6 +47,8 @@ public sealed class SettingsWindow : GlassWindow
 
     private readonly Func<AppConfig, IReadOnlyList<string>> _apply;
     private readonly List<MailAccount> _accounts;
+    private string _themeId;
+    private readonly GridView _themes = new() { SelectionMode = ListViewSelectionMode.Single, IsItemClickEnabled = true };
     private readonly StackPanel _accountList = new() { Spacing = 6 };
 
     public Action<IReadOnlyList<MailAccount>, Action<MailAccount>>? AddAccountRequested { get; set; }
@@ -77,6 +79,17 @@ public sealed class SettingsWindow : GlassWindow
         _apply = apply;
         _slots = config.Slots.Select(Draft.From).ToList();
         _accounts = (config.MailAccounts ?? []).ToList();
+        _themeId = config.ThemeId;
+        foreach (var t in KyzWheel.Core.Theming.Themes.All) _themes.Items.Add(ThemeCard(t));
+        _themes.SelectedIndex = Math.Max(0, KyzWheel.Core.Theming.Themes.All.ToList().FindIndex(t => t.Id == _themeId));
+        _themes.SelectionChanged += (_, _) =>
+        {
+            if (_themes.SelectedItem is FrameworkElement { Tag: string id })
+            {
+                _themeId = id;
+                KyzWheel.App.Shell.Theme.Apply(id);
+            }
+        };
         _status = Muted("");
         _global.Value = config.GlobalHotkey;
         _global.RecordingChanged += r => RecordingChanged?.Invoke(r);
@@ -113,6 +126,7 @@ public sealed class SettingsWindow : GlassWindow
 
         var root = new StackPanel { Spacing = 16, Padding = new Thickness(24, 44, 24, 24) };
         root.Children.Add(Heading("Ajustes"));
+        root.Children.Add(Card(Stack(Heading("Tema", 15), Muted("Cambia el aspecto de la rueda y las ventanas. Se ve al instante."), _themes)));
         root.Children.Add(Card(Stack(Heading("Atajo global", 15), Muted("Abre la rueda donde esté el cursor."), _global)));
         var listButtons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
         listButtons.Children.Add(_add);
@@ -141,7 +155,7 @@ public sealed class SettingsWindow : GlassWindow
             Save();
         });
         root.Children.Add(Card(Stack(Heading("Cuentas de correo", 15), Muted("Los correos recientes de todas aparecen juntos en la sección Correo."), _accountList, addAccount)));
-        root.Children.Add(Card(Stack(Heading("General", 15), _autostart, _accent)));
+        root.Children.Add(Card(Stack(Heading("General", 15), _autostart)));
         var footer = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 12 };
         footer.Children.Add(save);
         footer.Children.Add(_status);
@@ -154,6 +168,31 @@ public sealed class SettingsWindow : GlassWindow
             e.Cancel = true;
             AppWindow.Hide();
         };
+    }
+
+    private static FrameworkElement ThemeCard(KyzWheel.Core.Theming.ThemePalette t)
+    {
+        var size = 74.0;
+        var preview = new Grid { Width = size, Height = size, HorizontalAlignment = HorizontalAlignment.Center };
+        var glow = KyzWheel.App.Shell.Theme.Argb(t.Glow);
+        preview.Children.Add(new Microsoft.UI.Xaml.Shapes.Ellipse { Fill = new SolidColorBrush(ColorHelper.FromArgb((byte)(glow.A / 2), glow.R, glow.G, glow.B)), Margin = new Thickness(-4) });
+        preview.Children.Add(new Microsoft.UI.Xaml.Shapes.Ellipse { Fill = KyzWheel.App.Shell.Theme.Vertical(t.SliceTop, t.SliceBottom), Stroke = KyzWheel.App.Shell.Theme.Edge(t.Rim), StrokeThickness = 1 });
+        preview.Children.Add(new Microsoft.UI.Xaml.Shapes.Ellipse { Fill = SheenFor(t) });
+        preview.Children.Add(new Microsoft.UI.Xaml.Shapes.Ellipse { Width = size * 0.42, Height = size * 0.42, Fill = KyzWheel.App.Shell.Theme.Vertical(t.HubTop, t.HubBottom), Stroke = KyzWheel.App.Shell.Theme.Edge(t.Rim), StrokeThickness = 1 });
+        preview.Children.Add(new Microsoft.UI.Xaml.Shapes.Ellipse { Width = 8, Height = 8, Fill = new SolidColorBrush(KyzWheel.App.Shell.Theme.Argb(t.Accent)) });
+        var s = new StackPanel { Spacing = 8, Width = 108, Padding = new Thickness(6, 10, 6, 8), Tag = t.Id };
+        s.Children.Add(preview);
+        s.Children.Add(new TextBlock { Text = t.Name, FontSize = 12, HorizontalAlignment = HorizontalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis });
+        return s;
+    }
+
+    private static Brush SheenFor(KyzWheel.Core.Theming.ThemePalette t)
+    {
+        var c = KyzWheel.App.Shell.Theme.Argb(t.Sheen);
+        var b = new LinearGradientBrush { StartPoint = new Windows.Foundation.Point(0.2, 0), EndPoint = new Windows.Foundation.Point(0.6, 0.6) };
+        b.GradientStops.Add(new GradientStop { Color = c, Offset = 0 });
+        b.GradientStops.Add(new GradientStop { Color = ColorHelper.FromArgb(0, c.R, c.G, c.B), Offset = 1 });
+        return b;
     }
 
     private void RenderAccounts()
@@ -350,7 +389,7 @@ public sealed class SettingsWindow : GlassWindow
             return;
         }
         var cfg = new AppConfig(1, _global.Value ?? "Ctrl+Alt+Space", _slots.Select(s => s.ToSlot()).ToList(),
-            (string)((ComboBoxItem)_accent.SelectedItem).Tag, _autostart.IsOn) { MailAccounts = _accounts.ToList() };
+            KyzWheel.Core.Theming.Themes.Find(_themeId).Accent, _autostart.IsOn) { MailAccounts = _accounts.ToList(), ThemeId = _themeId };
         var errors = ConfigStore.Validate(cfg);
         if (errors.Count == 0) errors = _apply(cfg);
         _status.Text = errors.Count == 0 ? "Guardado" : string.Join(" · ", errors);

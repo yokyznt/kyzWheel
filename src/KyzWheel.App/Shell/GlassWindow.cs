@@ -16,11 +16,10 @@ public class GlassWindow : Window
     {
         Title = title;
         SystemBackdrop = new DesktopAcrylicBackdrop();
-        Surface = new Grid
-        {
-            Background = new SolidColorBrush(ColorHelper.FromArgb(0x8C, 0x08, 0x08, 0x0C)),
-            RequestedTheme = ElementTheme.Dark,
-        };
+        Surface = new Grid { RequestedTheme = ElementTheme.Dark, BorderThickness = new Thickness(1) };
+        Paint();
+        Theme.Changed += Paint;
+        Closed += (_, _) => Theme.Changed -= Paint;
         Content = Surface;
         if (chrome)
         {
@@ -43,6 +42,17 @@ public class GlassWindow : Window
         var (x, y) = User32.CursorPosition();
         var s = Shcore.ScaleAt(x, y);
         AppWindow.Resize(new Windows.Graphics.SizeInt32((int)(width * s), (int)(height * s)));
+    }
+
+    private void Paint()
+    {
+        var t = Theme.Current;
+        var tint = Theme.Argb(t.PanelTint);
+        var bg = new LinearGradientBrush { StartPoint = new Windows.Foundation.Point(0, 0), EndPoint = new Windows.Foundation.Point(0.4, 1) };
+        bg.GradientStops.Add(new GradientStop { Color = ColorHelper.FromArgb((byte)Math.Max(0, tint.A - 0x18), tint.R, tint.G, tint.B), Offset = 0 });
+        bg.GradientStops.Add(new GradientStop { Color = ColorHelper.FromArgb((byte)Math.Min(255, tint.A + 0x30), tint.R, tint.G, tint.B), Offset = 1 });
+        Surface.Background = bg;
+        Surface.BorderBrush = Theme.Edge(t.PanelEdge);
     }
 
     public void CenterOnCursorMonitor()

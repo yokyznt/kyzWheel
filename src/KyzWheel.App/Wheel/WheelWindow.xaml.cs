@@ -52,6 +52,8 @@ public sealed partial class WheelWindow : Window
     public WheelWindow()
     {
         InitializeComponent();
+        ApplyTheme();
+        KyzWheel.App.Shell.Theme.Changed += ApplyTheme;
         SystemBackdrop = new TransparentTintBackdrop();
         var p = (OverlappedPresenter)AppWindow.Presenter;
         p.SetBorderAndTitleBar(false, false);
@@ -232,9 +234,12 @@ public sealed partial class WheelWindow : Window
             var color = ParseColor(item.ColorHex);
             var geometry = SliceGeometry(i, n);
             var group = new Canvas { Width = Size, Height = Size };
-            var body = new Path { Data = geometry, Fill = SliceFill(), Stroke = new SolidColorBrush(ColorHelper.FromArgb(0x1C, 0xFF, 0xFF, 0xFF)), StrokeThickness = 1 };
+            var t = KyzWheel.App.Shell.Theme.Current;
+            var body = new Path { Data = geometry, Fill = KyzWheel.App.Shell.Theme.Vertical(t.SliceTop, t.SliceBottom), Stroke = KyzWheel.App.Shell.Theme.Edge(t.SliceStroke), StrokeThickness = 1 };
+            var sheen = new Path { Data = SliceGeometry(i, n), Fill = KyzWheel.App.Shell.Theme.Sheen(), IsHitTestVisible = false };
             var halo = new Path { Data = SliceGeometry(i, n), Fill = Tint(color, 0x2E, 0x0A), Stroke = new SolidColorBrush(ColorHelper.FromArgb(0x99, color.R, color.G, color.B)), StrokeThickness = 1.2, Opacity = 0, IsHitTestVisible = false };
             group.Children.Add(body);
+            group.Children.Add(sheen);
             group.Children.Add(halo);
             var mid = n == 1 ? 180 : WheelGeometry.SliceArc(i, n).startDeg + 180.0 / n;
             var (mx, my) = Polar(mid, (Ro + Ri) / 2);
@@ -263,6 +268,22 @@ public sealed partial class WheelWindow : Window
         if (_pages.Count > 1)
             for (var i = 0; i < _pages.Count; i++)
                 Dots.Children.Add(new Ellipse { Width = 5, Height = 5, Fill = new SolidColorBrush(i == index ? Colors.White : ColorHelper.FromArgb(0x55, 0xFF, 0xFF, 0xFF)) });
+    }
+
+    private void ApplyTheme()
+    {
+        var t = KyzWheel.App.Shell.Theme.Current;
+        Hub.Fill = KyzWheel.App.Shell.Theme.Vertical(t.HubTop, t.HubBottom);
+        Hub.Stroke = KyzWheel.App.Shell.Theme.Edge(t.Rim);
+        Rim.Stroke = KyzWheel.App.Shell.Theme.Edge(t.Rim);
+        HubSheen.Fill = KyzWheel.App.Shell.Theme.Sheen();
+        var g = KyzWheel.App.Shell.Theme.Argb(t.Glow);
+        var glow = new RadialGradientBrush();
+        glow.GradientStops.Add(new GradientStop { Color = g, Offset = 0.84 });
+        glow.GradientStops.Add(new GradientStop { Color = ColorHelper.FromArgb((byte)(g.A / 3), g.R, g.G, g.B), Offset = 0.92 });
+        glow.GradientStops.Add(new GradientStop { Color = ColorHelper.FromArgb(0, g.R, g.G, g.B), Offset = 1 });
+        Glow.Fill = glow;
+        if (_pages.Count > 0) BuildPage(_page);
     }
 
     private static Brush SliceFill()
