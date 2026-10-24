@@ -44,6 +44,18 @@ public sealed class GoogleOAuthTests
     }
 
     [Fact]
+    public void Needs_both_id_and_secret()
+    {
+        GoogleOAuth.ClientId = "x.apps.googleusercontent.com";
+        GoogleOAuth.ClientSecret = null;
+        Assert.False(GoogleOAuth.Configured);
+        GoogleOAuth.ClientSecret = "s";
+        Assert.True(GoogleOAuth.Configured);
+        GoogleOAuth.ClientId = null;
+        GoogleOAuth.ClientSecret = null;
+    }
+
+    [Fact]
     public async Task Refresh_without_client_fails_clearly()
     {
         GoogleOAuth.ClientId = null;

@@ -23,7 +23,7 @@ public static class GoogleOAuth
 
     public static string? ClientId { get; set; }
     public static string? ClientSecret { get; set; }
-    public static bool Configured => !string.IsNullOrWhiteSpace(ClientId);
+    public static bool Configured => !string.IsNullOrWhiteSpace(ClientId) && !string.IsNullOrWhiteSpace(ClientSecret);
 
     public static string NewVerifier() => Base64Url(RandomNumberGenerator.GetBytes(48));
 

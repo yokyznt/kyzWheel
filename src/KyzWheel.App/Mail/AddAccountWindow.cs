@@ -128,6 +128,7 @@ public sealed class AddAccountWindow : GlassWindow
     {
         if (!GoogleOAuth.Configured)
         {
+            if (string.IsNullOrEmpty(_clientId.Text)) _clientId.Text = GoogleOAuth.ClientId ?? "";
             _googleSetup.Visibility = Visibility.Visible;
             _status.Text = "";
             return;
