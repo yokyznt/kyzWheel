@@ -25,6 +25,9 @@ public static partial class Foreground
     public static bool IsFullscreenAppActive()
         => SHQueryUserNotificationState(out var s) == 0 && s is 2 or 3 or 4;
 
+    public static bool IsExclusiveFullscreen()
+        => SHQueryUserNotificationState(out var s) == 0 && s == 4;
+
     public static bool Force(nint hwnd)
     {
         var fg = GetForegroundWindow();

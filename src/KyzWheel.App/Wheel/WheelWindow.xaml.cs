@@ -71,6 +71,10 @@ public sealed partial class WheelWindow : Window
 
     public nint GetWindowHandleSafe() => this.GetWindowHandle();
     public WheelMode Mode => _mode;
+    public bool Docked { get; set; }
+    public event Action? LostFocus;
+    public int RadiusPx => (int)Math.Round(DiscR * (_scale <= 0 ? 1 : _scale));
+    public void ReleaseCursor() => Unlock();
     public static bool Passive { get; } = Environment.GetCommandLineArgs().Contains("--passive");
 
     public WheelWindow()
@@ -117,7 +121,8 @@ public sealed partial class WheelWindow : Window
                 _activeSinceShow = true;
                 return;
             }
-            if (!_locked && _mode == WheelMode.Root && _shown && _activeSinceShow && Environment.TickCount64 - _shownAt > 400) HideAnimated();
+            if (e.WindowActivationState == WindowActivationState.Deactivated && Docked && _shown) LostFocus?.Invoke();
+            if (!_locked && !Docked && _mode == WheelMode.Root && _shown && _activeSinceShow && Environment.TickCount64 - _shownAt > 400) HideAnimated();
         };
         AppWindow.Closing += (_, e) =>
         {
@@ -318,6 +323,7 @@ public sealed partial class WheelWindow : Window
 
     public void HideAnimated()
     {
+        Docked = false;
         Unlock();
         if (!_shown) return;
         _shown = false;

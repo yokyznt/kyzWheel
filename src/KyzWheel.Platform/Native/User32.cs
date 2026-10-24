@@ -138,6 +138,13 @@ public static partial class User32
     [LibraryImport("kernel32.dll")]
     public static partial uint GetCurrentThreadId();
 
+    public static int ProcessOf(nint hwnd)
+    {
+        if (hwnd == 0) return 0;
+        GetWindowThreadProcessId(hwnd, out var pid);
+        return (int)pid;
+    }
+
     public static bool IsDown(int vk) => (GetAsyncKeyState(vk) & 0x8000) != 0;
 
     public static (int X, int Y) CursorPosition()

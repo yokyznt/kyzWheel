@@ -247,6 +247,12 @@ export function createStore(file, { maxChats = 80, maxMessagesPerChat = 60, debo
     },
     recentChats: (n = 8) => Object.values(state.chats).filter((c) => c.lastTs > 0).sort((a, b) => b.lastTs - a.lastTs).slice(0, n).map(chatView),
     messages: (jid, n = 20) => (state.messages[jid] ?? []).slice(-n).map(lean),
+    recentMessages(n = 30) {
+      const all = []
+      for (const [jid, list] of Object.entries(state.messages))
+        for (const m of list) all.push({ jid, chatName: nameOf(jid), isGroup: jid.endsWith('@g.us'), ...lean(m) })
+      return all.sort((a, b) => b.ts - a.ts).slice(0, n)
+    },
     findMessage: (jid, id) => (state.messages[jid] ?? []).find((m) => m.id === id) ?? null,
     recentFiles(n = 8) {
       const all = []

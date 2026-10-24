@@ -13,8 +13,8 @@ public sealed class ConfigStoreTests : IDisposable
     public void Default_has_three_slots_and_hotkey()
     {
         var c = AppConfig.Default;
-        Assert.Equal("Ctrl+Alt+Space", c.GlobalHotkey);
-        Assert.Equal(new[] { SlotType.WhatsApp, SlotType.Mail, SlotType.Converter, SlotType.Clipboard, SlotType.Phone }, c.Slots.Select(s => s.Type));
+        Assert.Equal("Ctrl+Alt+Shift", c.GlobalHotkey);
+        Assert.Equal(new[] { SlotType.Messages, SlotType.Converter, SlotType.Clipboard, SlotType.Phone }, c.Slots.Select(s => s.Type));
         Assert.True(c.StartWithWindows);
     }
 
@@ -22,7 +22,7 @@ public sealed class ConfigStoreTests : IDisposable
     public void Missing_file_returns_default_and_writes_it()
     {
         var c = new ConfigStore(PathOf).Load();
-        Assert.Equal(5, c.Slots.Count);
+        Assert.Equal(4, c.Slots.Count);
         Assert.True(File.Exists(PathOf));
     }
 
@@ -36,7 +36,7 @@ public sealed class ConfigStoreTests : IDisposable
         Assert.Equal("Alt+Q", back.GlobalHotkey);
         Assert.Equal("#FF00AA", back.AccentHex);
         Assert.Equal(c.Slots, back.Slots);
-        Assert.Contains("\"WhatsApp\"", File.ReadAllText(PathOf));
+        Assert.Contains("\"Messages\"", File.ReadAllText(PathOf));
     }
 
     [Fact]
@@ -44,8 +44,10 @@ public sealed class ConfigStoreTests : IDisposable
     {
         File.WriteAllText(PathOf, "{ not json");
         var c = new ConfigStore(PathOf).Load();
-        Assert.Equal("Ctrl+Alt+Space", c.GlobalHotkey);
-        Assert.Equal("{ not json", File.ReadAllText(PathOf + ".bak"));
+        Assert.Equal("Ctrl+Alt+Shift", c.GlobalHotkey);
+        var backups = Directory.GetFiles(Path.GetDirectoryName(PathOf)!, Path.GetFileName(PathOf) + ".*.bak");
+        Assert.Single(backups);
+        Assert.Equal("{ not json", File.ReadAllText(backups[0]));
     }
 
     [Fact]
@@ -53,7 +55,7 @@ public sealed class ConfigStoreTests : IDisposable
     {
         var store = new ConfigStore(PathOf);
         File.WriteAllText(PathOf, "{\"Version\":1,\"GlobalHotkey\":\"Alt+Q\",\"Slots\":[],\"AccentHex\":\"#FF8A3D\",\"StartWithWindows\":true}");
-        Assert.Equal(5, store.Load().Slots.Count);
+        Assert.Equal(4, store.Load().Slots.Count);
     }
 
     [Fact]
@@ -87,7 +89,7 @@ public sealed class ConfigStoreTests : IDisposable
         var s = AppConfig.Default.Slots;
         var dupId = AppConfig.Default with { Slots = [s[0], s[1] with { Id = s[0].Id }] };
         var dupKey = AppConfig.Default with { Slots = [s[0] with { Hotkey = "Alt+1" }, s[1] with { Hotkey = "alt + 1" }] };
-        var clashGlobal = AppConfig.Default with { Slots = [s[0] with { Hotkey = "Ctrl+Alt+Space" }] };
+        var clashGlobal = AppConfig.Default with { Slots = [s[0] with { Hotkey = "Ctrl+Shift+Alt" }] };
         Assert.NotEmpty(ConfigStore.Validate(dupId));
         Assert.NotEmpty(ConfigStore.Validate(dupKey));
         Assert.NotEmpty(ConfigStore.Validate(clashGlobal));

@@ -23,6 +23,7 @@ const dispatch = createDispatcher({
   logout: () => conn.logout(),
   'chats.recent': async ({ limit = 8 }) => store.recentChats(limit),
   'messages.list': async ({ jid, limit = 20 }) => store.messages(jid, limit),
+  'messages.recent': async ({ limit = 30 }) => store.recentMessages(limit),
   'messages.send': (p) => conn.sendText(p),
   'files.send': (p) => conn.sendFile(p),
   'files.recent': async ({ limit = 8 }) => store.recentFiles(limit),

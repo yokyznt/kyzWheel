@@ -31,6 +31,12 @@ public static partial class Keys
 
     private static INPUT K(ushort vk, bool up) => new() { type = 1, ki = new KEYBDINPUT { wVk = vk, dwFlags = up ? 2u : 0u } };
 
+    public static void Chord(params ushort[] vks)
+    {
+        var inputs = vks.Select(v => K(v, false)).Concat(vks.Reverse().Select(v => K(v, true))).ToArray();
+        SendInput((uint)inputs.Length, inputs, Marshal.SizeOf<INPUT>());
+    }
+
     public static void PasteInto(nint hwnd)
     {
         if (hwnd != 0) SetForegroundWindow(hwnd);
