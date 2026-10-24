@@ -16,7 +16,7 @@
                     </LinearGradientBrush>
                 </Ellipse.Stroke>
             </Ellipse>
-            <Ellipse x:Name="Groove" Canvas.Left="110" Canvas.Top="110" Width="140" Height="140" StrokeThickness="1.5" Fill="#26000000" Stroke="#1FFFFFFF" IsHitTestVisible="False" />
+            <Ellipse x:Name="Groove" Canvas.Left="110" Canvas.Top="110" Width="140" Height="140" StrokeThickness="1.5" Fill="#14000000" Stroke="#26FFFFFF" IsHitTestVisible="False" />
             <Canvas x:Name="Pointer" Width="360" Height="360" Opacity="0" IsHitTestVisible="False">
                 <Path x:Name="PointerArc" StrokeThickness="3" StrokeStartLineCap="Round" StrokeEndLineCap="Round" />
                 <Ellipse x:Name="PointerDot" Width="0" Height="0" />
@@ -34,10 +34,10 @@
                     <TextBlock x:Name="HubCountText" FontFamily="ms-appx:///Assets/Fonts/Outfit.ttf#Outfit" FontSize="11" FontWeight="SemiBold" Foreground="#FF0B0B10" HorizontalAlignment="Center" VerticalAlignment="Center" />
                 </Border>
                 <StackPanel x:Name="HubLabels" VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="5">
-                    <Border x:Name="HubPill" CornerRadius="15" Height="30" MinWidth="64" MaxWidth="104" Padding="12,0" HorizontalAlignment="Center" Background="#1FFFFFFF" BorderBrush="#26FFFFFF" BorderThickness="1">
-                        <TextBlock x:Name="HubTitle" VerticalAlignment="Center" HorizontalAlignment="Center" TextAlignment="Center" TextTrimming="CharacterEllipsis" Foreground="#F5FFFFFF" FontFamily="ms-appx:///Assets/Fonts/Outfit.ttf#Outfit" FontSize="12" FontWeight="SemiBold" CharacterSpacing="30" />
+                    <Border x:Name="HubPill" CornerRadius="15" Height="30" MinWidth="64" MaxWidth="104" Padding="12,0" HorizontalAlignment="Center" Background="#33FFFFFF" BorderBrush="#40FFFFFF" BorderThickness="1">
+                        <TextBlock x:Name="HubTitle" VerticalAlignment="Center" HorizontalAlignment="Center" TextAlignment="Center" TextTrimming="CharacterEllipsis" Foreground="#F5FFFFFF" FontFamily="ms-appx:///Assets/Fonts/Outfit.ttf#Outfit" FontSize="13.5" FontWeight="Bold" CharacterSpacing="20" />
                     </Border>
-                    <TextBlock x:Name="HubSub" HorizontalAlignment="Center" TextAlignment="Center" TextTrimming="CharacterEllipsis" MaxWidth="100" FontFamily="ms-appx:///Assets/Fonts/Outfit.ttf#Outfit" Foreground="#66FFFFFF" FontSize="8.5" CharacterSpacing="60" />
+                    <TextBlock x:Name="HubSub" HorizontalAlignment="Center" TextAlignment="Center" TextTrimming="CharacterEllipsis" MaxWidth="100" FontFamily="ms-appx:///Assets/Fonts/Outfit.ttf#Outfit" Foreground="#B3FFFFFF" FontSize="9.5" FontWeight="SemiBold" CharacterSpacing="50" />
                 </StackPanel>
                 <StackPanel x:Name="Dots" Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,14" Spacing="5" />
             </Grid>

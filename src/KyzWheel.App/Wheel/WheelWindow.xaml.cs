@@ -77,7 +77,7 @@ public sealed partial class WheelWindow : Window
         InitializeComponent();
         ApplyTheme();
         KyzWheel.App.Shell.Theme.Changed += ApplyTheme;
-        SystemBackdrop = new KyzWheel.App.Shell.GlassBackdrop(1f);
+        SystemBackdrop = new KyzWheel.App.Shell.GlassBackdrop(0.5f);
         var p = (OverlappedPresenter)AppWindow.Presenter;
         p.SetBorderAndTitleBar(false, false);
         p.IsResizable = false;
@@ -440,7 +440,7 @@ public sealed partial class WheelWindow : Window
             var geometry = SliceGeometry(i, n);
             var group = new Canvas { Width = Size, Height = Size };
             var t = KyzWheel.App.Shell.Theme.Current;
-            var body = new Path { Data = geometry, Fill = KyzWheel.App.Shell.Theme.Vertical(t.SliceTop, t.SliceBottom), Stroke = KyzWheel.App.Shell.Theme.Edge(t.SliceStroke), StrokeThickness = 1 };
+            var body = new Path { Data = geometry, Fill = Glassy(t.SliceTop, t.SliceBottom), Stroke = KyzWheel.App.Shell.Theme.Edge(t.SliceStroke), StrokeThickness = 1 };
             var sheen = new Path { Data = SliceGeometry(i, n), Fill = KyzWheel.App.Shell.Theme.Sheen(), IsHitTestVisible = false };
             var halo = new Path { Data = SliceGeometry(i, n), Fill = Vivid(color), Stroke = new SolidColorBrush(ColorHelper.FromArgb(0x80, 0xFF, 0xFF, 0xFF)), StrokeThickness = 1, IsHitTestVisible = false };
             Microsoft.UI.Xaml.Hosting.ElementCompositionPreview.GetElementVisual(halo).Opacity = 0;
@@ -450,10 +450,10 @@ public sealed partial class WheelWindow : Window
             var mid = n == 1 ? 180 : WheelGeometry.SliceArc(i, n).startDeg + 180.0 / n;
             var (mx, my) = Polar(mid, (Ro + Ri) / 2);
             var content = new StackPanel { Width = 88, Spacing = 6, IsHitTestVisible = false };
-            content.Children.Add(new FontIcon { Glyph = item.Glyph, FontSize = 17, Foreground = new SolidColorBrush(ColorHelper.FromArgb(0xEE, 0xFF, 0xFF, 0xFF)), FontFamily = new FontFamily("Segoe Fluent Icons,Segoe MDL2 Assets"), HorizontalAlignment = HorizontalAlignment.Center });
-            content.Children.Add(new TextBlock { Text = item.Label.ToUpperInvariant(), FontFamily = KyzWheel.App.Shell.Ui.Font, FontSize = 10, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, CharacterSpacing = 50, Foreground = new SolidColorBrush(ColorHelper.FromArgb(0xE0, 0xFF, 0xFF, 0xFF)), HorizontalAlignment = HorizontalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis, MaxWidth = 84 });
+            content.Children.Add(new FontIcon { Glyph = item.Glyph, FontSize = 20, Foreground = new SolidColorBrush(Colors.White), FontFamily = new FontFamily("Segoe Fluent Icons,Segoe MDL2 Assets"), HorizontalAlignment = HorizontalAlignment.Center });
+            content.Children.Add(new TextBlock { Text = item.Label.ToUpperInvariant(), FontFamily = KyzWheel.App.Shell.Ui.Font, FontSize = 11.5, FontWeight = Microsoft.UI.Text.FontWeights.Bold, CharacterSpacing = 40, Foreground = new SolidColorBrush(Colors.White), HorizontalAlignment = HorizontalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis, MaxWidth = 84 });
             Canvas.SetLeft(content, mx - 44);
-            Canvas.SetTop(content, my - 21);
+            Canvas.SetTop(content, my - 24);
             group.Children.Add(content);
             var badge = new Border { MinWidth = 18, Height = 18, CornerRadius = new CornerRadius(9), Background = new SolidColorBrush(color), Padding = new Thickness(5, 0, 5, 0), IsHitTestVisible = false, Child = new TextBlock { FontFamily = KyzWheel.App.Shell.Ui.Font, FontSize = 10.5, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Foreground = new SolidColorBrush(Colors.Black), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center } };
             Canvas.SetLeft(badge, mx + 8);
@@ -484,15 +484,18 @@ public sealed partial class WheelWindow : Window
     private void ApplyTheme()
     {
         var t = KyzWheel.App.Shell.Theme.Current;
-        Hub.Fill = KyzWheel.App.Shell.Theme.Vertical(t.HubTop, t.HubBottom);
         Hub.Stroke = KyzWheel.App.Shell.Theme.Edge(t.Rim);
         Rim.Stroke = KyzWheel.App.Shell.Theme.Edge(t.Rim);
         HubSheen.Fill = KyzWheel.App.Shell.Theme.Sheen();
         var top = KyzWheel.App.Shell.Theme.Argb(t.HubTop);
         var bottom = KyzWheel.App.Shell.Theme.Argb(t.HubBottom);
         var disc = new LinearGradientBrush { StartPoint = new Point(0.5, 0), EndPoint = new Point(0.5, 1) };
-        disc.GradientStops.Add(new GradientStop { Color = ColorHelper.FromArgb(0x8C, top.R, top.G, top.B), Offset = 0 });
-        disc.GradientStops.Add(new GradientStop { Color = ColorHelper.FromArgb(0xB8, bottom.R, bottom.G, bottom.B), Offset = 1 });
+        disc.GradientStops.Add(new GradientStop { Color = ColorHelper.FromArgb(0x38, top.R, top.G, top.B), Offset = 0 });
+        disc.GradientStops.Add(new GradientStop { Color = ColorHelper.FromArgb(0x58, bottom.R, bottom.G, bottom.B), Offset = 1 });
+        var hub = new LinearGradientBrush { StartPoint = new Point(0.5, 0), EndPoint = new Point(0.5, 1) };
+        hub.GradientStops.Add(new GradientStop { Color = ColorHelper.FromArgb(0x70, top.R, top.G, top.B), Offset = 0 });
+        hub.GradientStops.Add(new GradientStop { Color = ColorHelper.FromArgb(0x90, bottom.R, bottom.G, bottom.B), Offset = 1 });
+        Hub.Fill = hub;
         Disc.Fill = disc;
         var g = KyzWheel.App.Shell.Theme.Argb(t.Glow);
         var glow = new RadialGradientBrush();
@@ -535,6 +538,16 @@ public sealed partial class WheelWindow : Window
     {
         var a = deg * Math.PI / 180;
         return (C + r * Math.Sin(a), C - r * Math.Cos(a));
+    }
+
+    private static Brush Glassy(string topHex, string bottomHex)
+    {
+        var a = KyzWheel.App.Shell.Theme.Argb(topHex);
+        var z = KyzWheel.App.Shell.Theme.Argb(bottomHex);
+        var b = new LinearGradientBrush { StartPoint = new Point(0.5, 0), EndPoint = new Point(0.5, 1) };
+        b.GradientStops.Add(new GradientStop { Color = ColorHelper.FromArgb((byte)Math.Min((int)a.A, 0x5C), a.R, a.G, a.B), Offset = 0 });
+        b.GradientStops.Add(new GradientStop { Color = ColorHelper.FromArgb((byte)Math.Min((int)z.A, 0x70), z.R, z.G, z.B), Offset = 1 });
+        return b;
     }
 
     private static Brush Vivid(Windows.UI.Color c)
