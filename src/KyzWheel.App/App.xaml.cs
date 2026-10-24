@@ -320,7 +320,6 @@ public partial class App : Application
     private void OnHotkey(string id)
     {
         if (_paused) return;
-        if (Foreground.IsFullscreenAppActive() && !_wheel.IsShown) return;
         var sw = Stopwatch.StartNew();
         if (id == "global")
         {
