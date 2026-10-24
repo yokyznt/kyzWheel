@@ -12,6 +12,8 @@ public sealed record AppConfig(int Version, string GlobalHotkey, IReadOnlyList<S
 
     public bool ToolsOffered { get; init; }
 
+    public bool Welcomed { get; init; }
+
     public string? GoogleClientId { get; init; }
 
     public string? GoogleClientSecret { get; init; }

@@ -101,7 +101,9 @@ public partial class App : Application
                 ("music", "Música", "\uE8D6", "#1DB954", SlotType.Music),
             ];
             foreach (var t in tools)
-                if (slots.All(x => x.Type != t.Type) && slots.Count < AppConfig.MaxSlots)
+                if (slots.All(x => x.Type != t.Type) && slots.Count < AppConfig.MaxSlots
+                    && (t.Type != SlotType.Hermes || KyzWheel.App.Tools.HermesPanel.Exe() is not null)
+                    && (t.Type != SlotType.Projects || Directory.Exists(KyzWheel.Core.Projects.ProjectScanner.DefaultRoot)))
                     slots.Add(new Slot(t.Id, t.Name, t.Glyph, t.Color, t.Type, null, null, false));
             _config = _config with { Slots = slots, ToolsOffered = true };
             _store.Save(_config);
@@ -192,6 +194,7 @@ public partial class App : Application
             };
             ft.Start();
         }
+        if (!Environment.GetCommandLineArgs().Contains("--passive")) Welcome();
         if (Environment.GetCommandLineArgs().SkipWhile(a => a != "--open").Skip(1).FirstOrDefault() is { } open
             && Enum.TryParse<SlotType>(open, true, out var type)
             && _config.Slots.FirstOrDefault(s => s.Type == type) is { } slot)
@@ -536,7 +539,7 @@ public partial class App : Application
             1 => _mail.Accounts[0].Email,
             var n => $"{n} cuentas · {_mail.Inbox.UnreadCount} sin leer",
         };
-        _panel.Show(s.Glyph, s.ColorHex, s.Name, sub, new MailPanel(_mail, OpenMail, OpenAddAccount), [compose, refresh, settings], x, y);
+        _panel.Show(s.Glyph, s.ColorHex, s.Name, sub, new MailPanel(_mail, OpenMail, ConnectGmail), [compose, refresh, settings], x, y);
     }
 
     private void ShowClipboardPanel(Slot s)
@@ -586,6 +589,72 @@ public partial class App : Application
         var w = new ComposeWindow(_mail, _toasts, files, reply);
         w.CenterOnCursorMonitor();
         w.BringToFront();
+    }
+
+    private bool _connecting;
+
+    private void ConnectGmail()
+    {
+        if (!GoogleOAuth.Configured)
+        {
+            OpenAddAccount();
+            return;
+        }
+        if (_connecting) return;
+        _connecting = true;
+        _panel?.HidePanel();
+        _ = ConnectGmailAsync();
+    }
+
+    private async Task ConnectGmailAsync()
+    {
+        Notify("gmail", "", "Elige tu cuenta de Google", "Se abrió tu navegador. Si dice «app no verificada»: Configuración avanzada › Ir a kyzWheel.", "#EA4335", "\uE715", null, true);
+        try
+        {
+            using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(5));
+            var r = await GoogleOAuth.SignInAsync(cts.Token);
+            _mail.Secrets.Set(ProviderPresets.SecretKey(r.Email), r.RefreshToken);
+            var existing = _config.MailAccounts ?? [];
+            if (existing.Any(a => a.Email.Equals(r.Email, StringComparison.OrdinalIgnoreCase)))
+            {
+                _mail.Restart(r.Email);
+                Notify("gmail", "", "Gmail ya estaba conectado", r.Email + " · acceso renovado", "#EA4335", "\uE715", null, true);
+                return;
+            }
+            var account = ProviderPresets.For(r.Email) with { DisplayName = r.Name, Auth = MailAuth.Google };
+            ApplyConfig(_config with { MailAccounts = [.. existing, account] });
+            Notify("gmail", "", "Gmail conectado", r.Email + " · toca para ver tus correos", "#EA4335", "\uE715", null, true);
+        }
+        catch (Exception e) when (e is MailKit.Security.AuthenticationException or OperationCanceledException or HttpRequestException or InvalidOperationException or System.Net.HttpListenerException)
+        {
+            Notify("gmail", "", "No se conectó Gmail", e is OperationCanceledException ? "Se acabó el tiempo. Inténtalo otra vez." : e.Message, "#EA4335", "\uE715", null, true);
+        }
+        finally
+        {
+            _connecting = false;
+        }
+    }
+
+    private void Welcome()
+    {
+        if (_config.Welcomed) return;
+        _config = _config with { Welcomed = true };
+        _store.Save(_config);
+        var hk = _config.GlobalHotkey.Replace("+", " + ");
+        var t = _ui.CreateTimer();
+        t.Interval = TimeSpan.FromSeconds(3);
+        t.IsRepeating = false;
+        t.Tick += (_, _) =>
+        {
+            (_banner ??= new BannerWindow()).Show(new Banner("kyzWheel está listo", $"Atajo: {hk}. Aprieta y suelta para abrir la rueda.", "#34D399", "\uE8F2", OpenWheelAtCursor));
+            if ((_config.MailAccounts ?? []).Count > 0) return;
+            var t2 = _ui.CreateTimer();
+            t2.Interval = TimeSpan.FromSeconds(8);
+            t2.IsRepeating = false;
+            t2.Tick += (_, _) => _banner!.Show(new Banner("Conecta tu Gmail", "Toca aquí y elige tu cuenta de Google.", "#EA4335", "\uE715", ConnectGmail));
+            t2.Start();
+        };
+        t.Start();
     }
 
     private void OpenAddAccount()
@@ -839,7 +908,7 @@ public partial class App : Application
                 return new WheelPage(s.Name,
                 [
                     new("msg:wa", "WhatsApp", "\uE8BD", "#25D366", _wa.Status.Unread, "msg:wa"),
-                    new("msg:mail", "Gmail", "\uE715", "#EA4335", _mail.Inbox.UnreadCount, "msg:mail"),
+                    new("msg:mail", _mail.Accounts.Count == 0 ? "Conectar Gmail" : "Gmail", "\uE715", "#EA4335", _mail.Inbox.UnreadCount, "msg:mail"),
                 ], s);
             case SlotType.Messages:
                 return new WheelPage(s.Name, [SlotItem(WaSlot), SlotItem(MailSlot)], s);
@@ -1004,24 +1073,40 @@ public partial class App : Application
         IReadOnlyList<KyzWheel.Core.WhatsApp.WaFeedItem> items;
         try
         {
-            items = await _wa.RecentMessagesAsync(40);
+            items = await _wa.RecentMessagesAsync(120);
         }
-        catch (Exception e) when (e is WaException or TimeoutException or InvalidOperationException)
+        catch (Exception e)
         {
+            Log.Error(e);
             return [];
         }
         var chats = _waChats.ToDictionary(c => c.Jid);
-        return items.Select(i => new KyzWheel.App.Messages.FeedEntry(
-            i.Jid + "|" + i.Message.Id,
-            i.Message.FromMe ? "Tú" : i.IsGroup && !string.IsNullOrEmpty(i.Message.Sender) ? i.Message.Sender! : i.ChatName,
-            i.IsGroup ? i.ChatName : i.Message.FromMe ? "a " + i.ChatName : null,
-            i.Message.Text,
-            i.Message.Ts,
-            "#25D366",
-            !i.Message.FromMe && chats.TryGetValue(i.Jid, out var c) && c.Unread > 0,
-            i.Jid,
-            i.Message.File?.Thumb,
-            () => ShowWhatsAppPanel(WaSlot, [], chats.TryGetValue(i.Jid, out var ch) ? ch : new KyzWheel.Core.WhatsApp.WaChat(i.Jid, i.ChatName, "", i.Message.Ts, 0, i.IsGroup)))).ToList();
+        return KyzWheel.Core.WhatsApp.WaFeedGrouper.Group(items).Select(g =>
+        {
+            var lines = g.Lines.Select(l =>
+            {
+                var m = l.Item.Message;
+                var who = m.FromMe ? "Tú" : g.IsGroup ? (string.IsNullOrEmpty(m.Sender) ? null : m.Sender) : g.ChatName;
+                var text = m.File is null ? m.Text : m.File.Kind is "sticker" or "audio" ? "" : m.Caption;
+                return new KyzWheel.App.Messages.FeedLine(who, text, m.Ts, l.Depth, l.ParentInGroup, m.QuoteSender, m.QuoteText, m.File);
+            }).ToList();
+            var last = g.Lines.MaxBy(l => l.Item.Message.Ts)!.Item.Message;
+            var chat = chats.TryGetValue(g.Jid, out var c) ? c : new KyzWheel.Core.WhatsApp.WaChat(g.Jid, g.ChatName, "", g.Last, 0, g.IsGroup);
+            return new KyzWheel.App.Messages.FeedEntry(
+                g.Jid,
+                g.ChatName,
+                g.Lines.Count > 1 ? $"{g.Lines.Count} mensajes" : null,
+                string.Join("\n", g.Lines.Select(l => l.Item.Message.Text)),
+                g.Last,
+                "#25D366",
+                chat.Unread > 0,
+                g.Jid,
+                null,
+                () => ShowWhatsAppPanel(WaSlot, [], chat),
+                null,
+                lines,
+                last.Id + g.Lines.Count);
+        }).ToList();
     }
 
     private IReadOnlyList<KyzWheel.App.Messages.FeedEntry> MailEntries()
@@ -1049,7 +1134,8 @@ public partial class App : Application
             return;
         }
         var entries = await WaEntriesAsync();
-        _feed = new KyzWheel.App.Messages.MessageFeedPanel(entries, _toasts, "Cuando lleguen mensajes aparecen aquí.", e => e.AvatarKey is { } jid ? _wa.AvatarAsync(jid) : Task.FromResult<string?>(null));
+        var waNote = Ui.Label("", 11, Ui.Tertiary);
+        _feed = new KyzWheel.App.Messages.MessageFeedPanel(entries, _toasts, "Cuando lleguen mensajes aparecen aquí.", e => e.AvatarKey is { } jid ? _wa.AvatarAsync(jid) : Task.FromResult<string?>(null), f => KyzWheel.App.WhatsApp.WhatsAppPanel.MediaView(_wa, waNote, f));
         _feedKind = "wa";
         DockPanel("\uE8BD", "#25D366", "WhatsApp", "En vivo · doble clic abre el chat", _feed, []);
     }
@@ -1058,14 +1144,16 @@ public partial class App : Application
     {
         if (_mail.Accounts.Count == 0)
         {
-            ShowMailPanel(MailSlot);
+            _wheel.HideAnimated();
+            ConnectGmail();
             return;
         }
         _feed = new KyzWheel.App.Messages.MessageFeedPanel(MailEntries(), _toasts, "No hay correos recientes.");
         _feedKind = "mail";
         var compose = Ui.IconButton("\uE70F", "Redactar", () => OpenCompose([], null));
         var refresh = Ui.IconButton("\uE72C", "Actualizar", () => { foreach (var a in _mail.Accounts) _mail.Restart(a.Email); });
-        DockPanel("\uE715", "#EA4335", "Gmail", $"{_mail.Inbox.UnreadCount} sin leer · en vivo", _feed, [refresh, compose]);
+        var add = Ui.IconButton("\uE710", "Agregar otra cuenta de Google", ConnectGmail);
+        DockPanel("\uE715", "#EA4335", "Gmail", $"{_mail.Inbox.UnreadCount} sin leer · en vivo", _feed, [add, refresh, compose]);
     }
 
     private void OnItemInvoked(WheelItem item)

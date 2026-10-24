@@ -398,7 +398,7 @@ public sealed class SettingsWindow : GlassWindow
             return;
         }
         var cfg = new AppConfig(1, _global.Value ?? "Ctrl+Alt+Space", _slots.Select(s => s.ToSlot()).ToList(),
-            KyzWheel.Core.Theming.Themes.Find(_themeId).Accent, _autostart.IsOn) { MailAccounts = _accounts.ToList(), ThemeId = _themeId, GoogleClientId = _base.GoogleClientId, GoogleClientSecret = _base.GoogleClientSecret, PhoneSlotOffered = _base.PhoneSlotOffered, MessagesMerged = _base.MessagesMerged, ToolsOffered = _base.ToolsOffered };
+            KyzWheel.Core.Theming.Themes.Find(_themeId).Accent, _autostart.IsOn) { MailAccounts = _accounts.ToList(), ThemeId = _themeId, GoogleClientId = _base.GoogleClientId, GoogleClientSecret = _base.GoogleClientSecret, PhoneSlotOffered = _base.PhoneSlotOffered, MessagesMerged = _base.MessagesMerged, ToolsOffered = _base.ToolsOffered, Welcomed = _base.Welcomed };
         var errors = ConfigStore.Validate(cfg);
         if (errors.Count == 0) errors = _apply(cfg);
         _status.Text = errors.Count == 0 ? "Guardado" : string.Join(" · ", errors);

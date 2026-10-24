@@ -46,6 +46,12 @@ export function textOf(message) {
   return ''
 }
 
+export function contextOf(message) {
+  const m = unwrap(message)
+  for (const v of Object.values(m)) if (v && typeof v === 'object' && v.contextInfo?.stanzaId) return v.contextInfo
+  return null
+}
+
 export function fileOf(message) {
   const m = unwrap(message)
   const key = Object.keys(MEDIA).find((k) => m[k])
@@ -204,6 +210,8 @@ export function createStore(file, { maxChats = 80, maxMessagesPerChat = 60, debo
       const ts = tsOf(m.messageTimestamp)
       const sender = group && !m.key.fromMe && from ? (contactName(from) ?? m.pushName ?? phoneOf(from)) : (m.pushName ?? null)
       const item = { id: m.key.id, fromMe: !!m.key.fromMe, text: textOf(m.message), caption: captionOf(m.message), ts, file: fileOf(m.message), sender }
+      const ctx = contextOf(m.message)
+      if (ctx) item.quote = { id: ctx.stanzaId, text: ctx.quotedMessage ? textOf(ctx.quotedMessage) : '', sender: ctx.participant ? (contactName(ctx.participant) ?? phoneOf(ctx.participant) ?? null) : null }
       const list = (state.messages[jid] ??= [])
       const i = list.findIndex((x) => x.id === item.id)
       if (i >= 0) list[i] = item

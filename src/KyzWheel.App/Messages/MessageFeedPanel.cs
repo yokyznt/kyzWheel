@@ -11,7 +11,9 @@ using Windows.Storage.Streams;
 
 namespace KyzWheel.App.Messages;
 
-public sealed record FeedEntry(string Key, string Name, string? Context, string Body, DateTimeOffset When, string ColorHex, bool Unread, string? AvatarKey = null, string? Thumb = null, Action? Open = null, string? Account = null);
+public sealed record FeedLine(string? Who, string Text, DateTimeOffset When, int Depth, bool Nested, string? QuoteWho, string? QuoteText, KyzWheel.Core.WhatsApp.WaFile? File);
+
+public sealed record FeedEntry(string Key, string Name, string? Context, string Body, DateTimeOffset When, string ColorHex, bool Unread, string? AvatarKey = null, string? Thumb = null, Action? Open = null, string? Account = null, IReadOnlyList<FeedLine>? Lines = null, string Signature = "");
 
 public sealed class MessageFeedPanel : Grid
 {
@@ -20,12 +22,14 @@ public sealed class MessageFeedPanel : Grid
     private readonly Toasts _toasts;
     private readonly string _empty;
     private readonly Func<FeedEntry, Task<string?>>? _avatar;
+    private readonly Func<KyzWheel.Core.WhatsApp.WaFile, UIElement>? _media;
     private readonly TextBox _search = new() { PlaceholderText = "Buscar", CornerRadius = new CornerRadius(10) };
     private readonly HashSet<string> _seen = new();
     private IReadOnlyList<FeedEntry> _entries = [];
 
-    public MessageFeedPanel(IReadOnlyList<FeedEntry> entries, Toasts toasts, string empty, Func<FeedEntry, Task<string?>>? avatar = null)
+    public MessageFeedPanel(IReadOnlyList<FeedEntry> entries, Toasts toasts, string empty, Func<FeedEntry, Task<string?>>? avatar = null, Func<KyzWheel.Core.WhatsApp.WaFile, UIElement>? media = null)
     {
+        _media = media;
         _toasts = toasts;
         _empty = empty;
         _avatar = avatar;
@@ -53,7 +57,7 @@ public sealed class MessageFeedPanel : Grid
     private void Render(bool animate)
     {
         var q = _search.Text.Trim();
-        var list = _entries.Where(e => q.Length == 0 || $"{e.Name} {e.Context} {e.Body} {e.Account}".Contains(q, StringComparison.OrdinalIgnoreCase)).ToList();
+        var list = _entries.Where(e => q.Length == 0 || $"{e.Name} {e.Context} {e.Body} {e.Account} {string.Join(' ', e.Lines?.Select(l => l.Who + " " + l.Text) ?? [])}".Contains(q, StringComparison.OrdinalIgnoreCase)).ToList();
         _rows.Children.Clear();
         if (list.Count == 0) _rows.Children.Add(KyzWheel.App.Mail.MailPanel.Empty("\uE8F2", q.Length > 0 ? "Sin resultados" : "Sin mensajes", q.Length > 0 ? "Prueba con otra palabra." : _empty, null, null));
         var first = _seen.Count == 0;
@@ -61,7 +65,7 @@ public sealed class MessageFeedPanel : Grid
         {
             var card = Card(e);
             _rows.Children.Add(card);
-            if (_seen.Add(e.Key) && animate && !first) KyzWheel.App.Wheel.WheelAnimations.RowEnter(card);
+            if (_seen.Add(e.Key + "|" + e.Signature) && animate && !first) KyzWheel.App.Wheel.WheelAnimations.RowEnter(card);
         }
     }
 
@@ -105,8 +109,12 @@ public sealed class MessageFeedPanel : Grid
         top.Children.Add(when);
         t.Children.Add(top);
         if (!string.IsNullOrEmpty(e.Context)) t.Children.Add(Text(e.Context, 11.5, Ui.Secondary, maxLines: 2));
-        if (!string.IsNullOrEmpty(e.Thumb) && Thumb(e.Thumb) is { } img) t.Children.Add(img);
-        t.Children.Add(Text(e.Body, 12.5, Ui.Text, maxLines: 8));
+        if (e.Lines is { Count: > 0 } lines) t.Children.Add(Thread(lines));
+        else
+        {
+            if (!string.IsNullOrEmpty(e.Thumb) && Thumb(e.Thumb) is { } img) t.Children.Add(img);
+            t.Children.Add(Text(e.Body, 12.5, Ui.Text, maxLines: 8));
+        }
         if (!string.IsNullOrEmpty(e.Account)) t.Children.Add(Text(e.Account, 10.5, Ui.Tertiary));
         Grid.SetColumn(t, 1);
         g.Children.Add(t);
@@ -128,6 +136,34 @@ public sealed class MessageFeedPanel : Grid
         wrap.Children.Add(card);
         wrap.Children.Add(actions);
         return wrap;
+    }
+
+    private UIElement Thread(IReadOnlyList<FeedLine> lines)
+    {
+        var list = new StackPanel { Spacing = 6, Margin = new Thickness(0, 2, 0, 0) };
+        string? prevWho = null;
+        foreach (var l in lines.TakeLast(12))
+        {
+            var row = new StackPanel { Spacing = 3, Margin = new Thickness(l.Depth * 12, 0, 0, 0) };
+            if (l.Who is { } who && (who != prevWho || l.Depth > 0))
+            {
+                var head = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
+                head.Children.Add(Ui.Label(who, 11, Ui.Parse(KyzWheel.App.WhatsApp.WhatsAppPanel.NameColor(who)), bold: true));
+                head.Children.Add(Ui.Label(l.When.ToLocalTime().ToString("HH:mm"), 10, Ui.Tertiary));
+                row.Children.Add(head);
+            }
+            prevWho = l.Who;
+            if (!l.Nested && KyzWheel.App.WhatsApp.WhatsAppPanel.Quote(l.QuoteWho, l.QuoteText) is { } q) row.Children.Add(q);
+            if (l.File is { } f && _media is not null && f.Kind is "sticker" or "audio" or "image" or "video") row.Children.Add(f.Kind == "sticker" ? new Viewbox { Child = _media(f), Height = 84, HorizontalAlignment = HorizontalAlignment.Left } : _media(f));
+            if (l.Text.Length > 0) row.Children.Add(Text(l.Text, 12.5, Ui.Text, maxLines: 6));
+            UIElement item = row;
+            if (l.Depth > 0)
+                item = new Border { Child = row, BorderThickness = new Thickness(2, 0, 0, 0), BorderBrush = Ui.Brush(ColorHelper.FromArgb(0x55, 0x25, 0xD3, 0x66)), Padding = new Thickness(8, 0, 0, 0), Margin = new Thickness(l.Depth * 10 - 10, 0, 0, 0) };
+            if (l.Depth > 0) row.Margin = new Thickness(0);
+            list.Children.Add(item);
+        }
+        if (lines.Count > 12) list.Children.Insert(0, Ui.Label($"+{lines.Count - 12} anteriores", 10.5, Ui.Tertiary));
+        return list;
     }
 
     private static Image? Thumb(string b64)
