@@ -5,3 +5,4 @@ node_modules/
 publish/
 Releases/
 .impeccable/hook.cache.json
+.superpowers/
