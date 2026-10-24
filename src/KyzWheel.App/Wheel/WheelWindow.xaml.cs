@@ -38,6 +38,9 @@ public sealed partial class WheelWindow : Window
     private long _shownAt;
     private IReadOnlyList<string> _dragFiles = [];
     private string? _hubDefault;
+    private bool _locked;
+    private (int L, int T, int R, int B) _lockRect;
+    private readonly Microsoft.UI.Dispatching.DispatcherQueueTimer _lockTimer;
     private Stopwatch? _perf;
 
     public event Action<WheelItem>? ItemInvoked;
@@ -69,6 +72,17 @@ public sealed partial class WheelWindow : Window
         WheelAnimations.SetCenter(Layer, (float)C, (float)C);
         Root.PointerMoved += OnPointerMoved;
         Root.PointerReleased += OnPointerReleased;
+        Root.PointerPressed += (_, e) =>
+        {
+            if (e.GetCurrentPoint(Root).Properties.IsRightButtonPressed)
+            {
+                e.Handled = true;
+                HideAnimated();
+            }
+        };
+        _lockTimer = DispatcherQueue.CreateTimer();
+        _lockTimer.Interval = TimeSpan.FromMilliseconds(200);
+        _lockTimer.Tick += (_, _) => { if (_locked && _shown) ApplyLock(); };
         Root.PointerExited += (_, _) => SetHover(-1);
         Root.KeyDown += OnKeyDown;
         Root.DragEnter += OnDragEnter;
@@ -82,7 +96,7 @@ public sealed partial class WheelWindow : Window
                 _activeSinceShow = true;
                 return;
             }
-            if (_mode != WheelMode.Drag && _shown && _activeSinceShow && Environment.TickCount64 - _shownAt > 400) HideAnimated();
+            if (_mode == WheelMode.Root && _shown && _activeSinceShow && Environment.TickCount64 - _shownAt > 400) HideAnimated();
         };
         AppWindow.Closing += (_, e) =>
         {
@@ -181,6 +195,14 @@ public sealed partial class WheelWindow : Window
         var (cx, cy) = WheelGeometry.ClampToWorkArea(x, y, px / 2.0, new KyzWheel.Core.Wheel.Rect(wa.X, wa.Y, wa.W, wa.H));
         AppWindow.MoveAndResize(new Windows.Graphics.RectInt32((int)cx - px / 2, (int)cy - px / 2, px, px));
         Dwm.ClipCircle(this.GetWindowHandle(), px, (Ro + 1) * scale);
+        _locked = _mode == WheelMode.Files;
+        if (_locked)
+        {
+            _lockRect = WheelGeometry.LockRect((int)cx, (int)cy, (Ro - 10) * scale);
+            CursorLock.MoveTo((int)cx, (int)cy);
+            ApplyLock();
+            _lockTimer.Start();
+        }
         BuildPage(0);
         _shown = true;
         _activeSinceShow = false;
@@ -205,8 +227,19 @@ public sealed partial class WheelWindow : Window
         _perf = null;
     }
 
+    private void ApplyLock() => CursorLock.Lock(_lockRect.L, _lockRect.T, _lockRect.R, _lockRect.B);
+
+    private void Unlock()
+    {
+        if (!_locked) return;
+        _locked = false;
+        _lockTimer.Stop();
+        CursorLock.Release();
+    }
+
     public void HideAnimated()
     {
+        Unlock();
         if (!_shown) return;
         _shown = false;
         SetHover(-1);
@@ -401,7 +434,11 @@ public sealed partial class WheelWindow : Window
         return ColorHelper.FromArgb((byte)(v >> 24), (byte)(v >> 16), (byte)(v >> 8), (byte)v);
     }
 
-    private int HitTest(Point p) =>
+    private int HitTest(Point p) => _locked
+        ? (_slices.Count == 0 ? -1 : WheelGeometry.SliceAtAngle(p.X - C, p.Y - C, _slices.Count, Ri * 0.55))
+        : HitTestRing(p);
+
+    private int HitTestRing(Point p) =>
         _slices.Count == 0 ? -1 : WheelGeometry.SliceAt(p.X - C, p.Y - C, _slices.Count, Ri, Ro + 6);
 
     private void SetHover(int index)
@@ -442,8 +479,7 @@ public sealed partial class WheelWindow : Window
             else ItemInvoked?.Invoke(item);
             return;
         }
-        var r = Math.Sqrt((p.X - C) * (p.X - C) + (p.Y - C) * (p.Y - C));
-        if (r > Ro + 6) HideAnimated();
+
     }
 
     private void OnKeyDown(object sender, KeyRoutedEventArgs e)

@@ -47,7 +47,12 @@ public partial class App : Application
     {
         InitializeComponent();
         UnhandledException += (_, e) => Log.Error(e.Exception);
-        AppDomain.CurrentDomain.UnhandledException += (_, e) => Log.Error((Exception)e.ExceptionObject);
+        AppDomain.CurrentDomain.UnhandledException += (_, e) =>
+        {
+            KyzWheel.Platform.Native.CursorLock.Release();
+            Log.Error((Exception)e.ExceptionObject);
+        };
+        AppDomain.CurrentDomain.ProcessExit += (_, _) => KyzWheel.Platform.Native.CursorLock.Release();
         TaskScheduler.UnobservedTaskException += (_, e) =>
         {
             Log.Error(e.Exception);
