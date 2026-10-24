@@ -9,7 +9,7 @@ Rueda radial para Windows 10 (2004+) / 11 x64. Tema negro glass. Se abre con un 
 | Plataforma | Solo Windows 10 2004+ / 11, x64 |
 | Stack | C# .NET 10 (LTS) + WinUI 3 (Windows App SDK 1.8, unpackaged, self-contained) + WinUIEx; sidecar Node 24 (SEA exe) para WhatsApp |
 | Nombre / repo | kyzWheel · `yokyznt/kyzWheel` público, MIT · `C:\Users\yokis\Trabajos\Proyectos\kyzWheel` |
-| Atajo global | `Ctrl+Shift+Space` por defecto, configurable (teclado o botones laterales del mouse) |
+| Atajo global | `Ctrl+Alt+Space` (Ctrl+Shift+Space lo usa Hermes) por defecto, configurable (teclado o botones laterales del mouse) |
 | Gesto archivo | Arrastrar archivo en Explorer/escritorio + Shift → rueda en página Convertidor |
 | Secciones | Slots configurables: nombre, ícono (Segoe Fluent), color, tipo, atajo propio opcional. 1–8 slots. Por defecto: WhatsApp, Gmail, Convertidor |
 | Tipos de slot | `WhatsApp`, `Mail`, `Converter`, `LaunchApp`, `OpenUrl`, `SendToFolder` |

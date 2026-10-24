@@ -13,7 +13,7 @@ public sealed class ConfigStoreTests : IDisposable
     public void Default_has_three_slots_and_hotkey()
     {
         var c = AppConfig.Default;
-        Assert.Equal("Ctrl+Shift+Space", c.GlobalHotkey);
+        Assert.Equal("Ctrl+Alt+Space", c.GlobalHotkey);
         Assert.Equal(new[] { SlotType.WhatsApp, SlotType.Mail, SlotType.Converter }, c.Slots.Select(s => s.Type));
         Assert.True(c.StartWithWindows);
     }
@@ -44,7 +44,7 @@ public sealed class ConfigStoreTests : IDisposable
     {
         File.WriteAllText(PathOf, "{ not json");
         var c = new ConfigStore(PathOf).Load();
-        Assert.Equal("Ctrl+Shift+Space", c.GlobalHotkey);
+        Assert.Equal("Ctrl+Alt+Space", c.GlobalHotkey);
         Assert.Equal("{ not json", File.ReadAllText(PathOf + ".bak"));
     }
 
@@ -87,7 +87,7 @@ public sealed class ConfigStoreTests : IDisposable
         var s = AppConfig.Default.Slots;
         var dupId = AppConfig.Default with { Slots = [s[0], s[1] with { Id = s[0].Id }] };
         var dupKey = AppConfig.Default with { Slots = [s[0] with { Hotkey = "Alt+1" }, s[1] with { Hotkey = "alt + 1" }] };
-        var clashGlobal = AppConfig.Default with { Slots = [s[0] with { Hotkey = "Ctrl+Shift+Space" }] };
+        var clashGlobal = AppConfig.Default with { Slots = [s[0] with { Hotkey = "Ctrl+Alt+Space" }] };
         Assert.NotEmpty(ConfigStore.Validate(dupId));
         Assert.NotEmpty(ConfigStore.Validate(dupKey));
         Assert.NotEmpty(ConfigStore.Validate(clashGlobal));

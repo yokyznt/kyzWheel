@@ -304,7 +304,7 @@ public sealed class SettingsWindow : GlassWindow
             _status.Text = $"Falta el destino de {missing.Name}";
             return;
         }
-        var cfg = new AppConfig(1, _global.Value ?? "Ctrl+Shift+Space", _slots.Select(s => s.ToSlot()).ToList(),
+        var cfg = new AppConfig(1, _global.Value ?? "Ctrl+Alt+Space", _slots.Select(s => s.ToSlot()).ToList(),
             (string)((ComboBoxItem)_accent.SelectedItem).Tag, _autostart.IsOn);
         var errors = ConfigStore.Validate(cfg);
         if (errors.Count == 0) errors = _apply(cfg);

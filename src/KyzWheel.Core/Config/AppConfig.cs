@@ -9,7 +9,7 @@ public sealed record AppConfig(int Version, string GlobalHotkey, IReadOnlyList<S
 
     public static AppConfig Default { get; } = new(
         1,
-        "Ctrl+Shift+Space",
+        "Ctrl+Alt+Space",
         [
             new Slot("whatsapp", "WhatsApp", "\uE8BD", "#25D366", SlotType.WhatsApp, null, null, true),
             new Slot("mail", "Gmail", "\uE715", "#EA4335", SlotType.Mail, null, null, true),

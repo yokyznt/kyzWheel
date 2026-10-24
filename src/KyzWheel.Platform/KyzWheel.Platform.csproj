@@ -1,7 +1,8 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
     <ProjectReference Include="..\KyzWheel.Core\KyzWheel.Core.csproj" />
+    <ProjectReference Include="..\KyzWheel.Mail\KyzWheel.Mail.csproj" />
   </ItemGroup>
 
   <PropertyGroup>
