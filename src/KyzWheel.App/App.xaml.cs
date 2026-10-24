@@ -43,6 +43,7 @@ public partial class App : Application
     private MailService _mail = null!;
     private WhatsAppBridge _wa = null!;
     private readonly ClipboardService _clips = new();
+    private readonly KyzWheel.App.Phone.PhoneService _phone = new();
     private Microsoft.UI.Dispatching.DispatcherQueueTimer? _rehook;
     private IReadOnlyList<KyzWheel.Core.WhatsApp.WaChat> _waChats = [];
     private nint _lastForeground;
@@ -76,6 +77,14 @@ public partial class App : Application
         }
         _ui = DispatcherQueue.GetForCurrentThread();
         _config = _store.Load();
+        if (!_config.PhoneSlotOffered)
+        {
+            var slots = _config.Slots.ToList();
+            if (slots.All(x => x.Type != SlotType.Phone) && slots.Count < AppConfig.MaxSlots)
+                slots.Add(new Slot("phone", "Celular", "\uE8EA", "#60A5FA", SlotType.Phone, null, null, false));
+            _config = _config with { Slots = slots, PhoneSlotOffered = true };
+            _store.Save(_config);
+        }
         Theme.Apply(_config.ThemeId);
         _mail = new MailService(new CredentialManagerStore(), _ui);
         _mail.Changed += UpdateBadges;
@@ -559,6 +568,15 @@ public partial class App : Application
                 var items = new List<WheelItem> { new("mail:compose", "Redactar", "\uE70F", s.ColorHex, 0, "compose") };
                 items.AddRange(mails.Select(m => new WheelItem("mail:" + m.MessageId, Short(m.FromName.Length > 0 ? m.FromName : m.FromAddress), m.HasAttachments ? "\uE723" : "\uE715", s.ColorHex, m.Unread ? 1 : 0, m)));
                 return new WheelPage(s.Name, items, s);
+            case SlotType.Phone when mode == WheelMode.Root && _phone.Installed:
+                return new WheelPage(s.Name,
+                [
+                    new("phone:clip", "Portapapeles", "\uE77F", s.ColorHex, 0, "phone:clip"),
+                    new("phone:file", "Archivo", "\uE8E5", s.ColorHex, 0, "phone:file"),
+                    new("phone:shot", "Última captura", "\uE722", s.ColorHex, 0, "phone:shot"),
+                    new("phone:ring", "Sonar", "\uEA8F", s.ColorHex, 0, "phone:ring"),
+                    new("phone:ping", "Avisar", "\uE7E7", s.ColorHex, 0, "phone:ping"),
+                ], s);
             case SlotType.Clipboard when mode == WheelMode.Root:
                 var clips = _clips.History.Items;
                 if (clips.Count == 0) return null;
@@ -614,6 +632,27 @@ public partial class App : Application
             case "pick":
                 PickFileForConverter();
                 break;
+            case "phone:clip":
+                _wheel.HideAnimated();
+                _ = PhoneAsync("Portapapeles enviado", () => _phone.SendClipboardAsync());
+                break;
+            case "phone:file":
+                PickFilesForPhone();
+                break;
+            case "phone:shot":
+                _wheel.HideAnimated();
+                var shot = LatestScreenshot();
+                if (shot is null) _toasts.Info("Celular", "No encontré capturas en Imágenes › Capturas de pantalla");
+                else _ = PhoneAsync("Captura enviada", () => _phone.SendFilesAsync([shot]));
+                break;
+            case "phone:ring":
+                _wheel.HideAnimated();
+                _ = PhoneAsync("Sonando", () => _phone.RingAsync());
+                break;
+            case "phone:ping":
+                _wheel.HideAnimated();
+                _ = PhoneAsync("Aviso enviado", () => _phone.PingAsync("Hola desde kyzWheel"));
+                break;
             case RecentFile rf:
                 var (rx, ry) = WheelCenter();
                 ShowConverterWheel(rx, ry, [rf.Path]);
@@ -661,6 +700,9 @@ public partial class App : Application
                 case SlotType.Clipboard:
                     ShowClipboardPanel(s);
                     break;
+                case SlotType.Phone:
+                    ShowPhoneSetup(s);
+                    break;
                 case SlotType.WhatsApp:
                     ShowWhatsAppPanel(s, []);
                     break;
@@ -677,6 +719,55 @@ public partial class App : Application
             Log.Error(e);
             _toasts.Info(s.Name, "No se pudo abrir: " + s.Target);
         }
+    }
+
+    private async Task PhoneAsync(string done, Func<Task<string>> action)
+    {
+        try
+        {
+            var name = await action();
+            _toasts.Info(done, name);
+        }
+        catch (KyzWheel.App.Phone.PhoneException e)
+        {
+            _toasts.Info("Celular", e.Message);
+        }
+    }
+
+    private static string? LatestScreenshot()
+    {
+        var dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyPictures), "Screenshots");
+        if (!Directory.Exists(dir)) return null;
+        return new DirectoryInfo(dir).EnumerateFiles().Where(f => f.Extension is ".png" or ".jpg" or ".jpeg").OrderByDescending(f => f.LastWriteTimeUtc).FirstOrDefault()?.FullName;
+    }
+
+    private async void PickFilesForPhone()
+    {
+        _wheel.HideAnimated();
+        var picker = new Windows.Storage.Pickers.FileOpenPicker();
+        picker.FileTypeFilter.Add("*");
+        WinRT.Interop.InitializeWithWindow.Initialize(picker, _wheel.GetWindowHandleSafe());
+        var picked = await picker.PickMultipleFilesAsync();
+        var files = picked?.Select(p => p.Path).Where(p => !string.IsNullOrEmpty(p)).ToList() ?? [];
+        if (files.Count > 0) await PhoneAsync(files.Count == 1 ? "Archivo enviado" : $"{files.Count} archivos enviados", () => _phone.SendFilesAsync(files));
+    }
+
+    private void ShowPhoneSetup(Slot s)
+    {
+        var (x, y) = WheelCenter();
+        _wheel.HideAnimated();
+        _panel ??= new SidePanelWindow();
+        var body = new Microsoft.UI.Xaml.Controls.StackPanel { Spacing = 12 };
+        body.Children.Add(Ui.Label(_phone.Installed ? "Vincula tu celular" : "Falta KDE Connect", 16, bold: true));
+        body.Children.Add(Ui.Label(_phone.Installed
+            ? "1. Instala «KDE Connect» en tu celular (Play Store).\n2. Conecta el celular y la PC a la misma red Wi-Fi.\n3. En la app del celular toca tu PC y «Vincular»; acepta aquí.\n4. En el celular, en los permisos de KDE Connect, activa Archivos y Portapapeles."
+            : "Instala KDE Connect en la PC y en tu celular. Es gratis y todo viaja cifrado por tu red Wi-Fi.", 12.5, Ui.Secondary, maxLines: 10));
+        if (KyzWheel.App.Phone.PhoneService.AppPath() is { } app)
+            body.Children.Add(Ui.Primary("Abrir KDE Connect", () => Process.Start(new ProcessStartInfo(app) { UseShellExecute = true }), "\uE8EA"));
+        else
+            body.Children.Add(Ui.Primary("Instalar KDE Connect", () => Process.Start(new ProcessStartInfo("winget", "install --id KDE.KDEConnect -e --accept-source-agreements --accept-package-agreements") { UseShellExecute = true }), "\uE896"));
+        body.Children.Add(Ui.Primary("Ya lo vinculé", () => _ = PhoneAsync("Celular conectado", () => _phone.PingAsync("kyzWheel conectado")), "\uE73E"));
+        _panel.Show(s.Glyph, s.ColorHex, s.Name, "Sin celular vinculado", body, [], x, y);
     }
 
     private void ShowPanel(Slot s, string text)
@@ -731,6 +822,9 @@ public partial class App : Application
                     break;
                 case SlotType.WhatsApp:
                     ShowWhatsAppPanel(s, files);
+                    break;
+                case SlotType.Phone:
+                    _ = PhoneAsync(files.Count == 1 ? $"Enviado: {Path.GetFileName(files[0])}" : $"{files.Count} archivos enviados", () => _phone.SendFilesAsync(files));
                     break;
                 case SlotType.Converter:
                     var (cx, cy) = User32.CursorPosition();

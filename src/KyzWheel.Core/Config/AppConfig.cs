@@ -6,6 +6,8 @@ public sealed record AppConfig(int Version, string GlobalHotkey, IReadOnlyList<S
 
     public string ThemeId { get; init; } = KyzWheel.Core.Theming.Themes.DefaultId;
 
+    public bool PhoneSlotOffered { get; init; }
+
     public string? GoogleClientId { get; init; }
 
     public string? GoogleClientSecret { get; init; }
@@ -21,6 +23,7 @@ public sealed record AppConfig(int Version, string GlobalHotkey, IReadOnlyList<S
             new Slot("mail", "Gmail", "\uE715", "#EA4335", SlotType.Mail, null, null, true),
             new Slot("converter", "Convertidor", "\uE8AB", "#FF8A3D", SlotType.Converter, null, null, false),
             new Slot("clipboard", "Portapapeles", "\uE77F", "#A78BFA", SlotType.Clipboard, null, null, false),
+            new Slot("phone", "Celular", "\uE8EA", "#60A5FA", SlotType.Phone, null, null, false),
         ],
         "#FF8A3D",
         true);
