@@ -154,6 +154,8 @@ public partial class App : Application
 
     private IReadOnlyList<string> ApplyConfig(AppConfig cfg)
     {
+        KyzWheel.Mail.GoogleOAuth.ClientId = cfg.GoogleClientId ?? Environment.GetEnvironmentVariable("KYZ_GOOGLE_CLIENT_ID");
+        KyzWheel.Mail.GoogleOAuth.ClientSecret = cfg.GoogleClientSecret ?? Environment.GetEnvironmentVariable("KYZ_GOOGLE_CLIENT_SECRET");
         var errors = new List<string>();
         _hotkeys!.UnregisterAll();
         if (Hotkey.TryParse(cfg.GlobalHotkey, out var g) && !_hotkeys.Register("global", g))
@@ -313,6 +315,7 @@ public partial class App : Application
         }
         _addAccount = new AddAccountWindow(_mail.Secrets, _config.MailAccounts ?? []);
         _addAccount.Added += a => ApplyConfig(_config with { MailAccounts = [.. _config.MailAccounts ?? [], a] });
+        _addAccount.GoogleClientSaved += (id, secret) => ApplyConfig(_config with { GoogleClientId = id, GoogleClientSecret = secret });
         _addAccount.Closed += (_, _) => _addAccount = null;
         _addAccount.CenterOnCursorMonitor();
         _addAccount.BringToFront();
