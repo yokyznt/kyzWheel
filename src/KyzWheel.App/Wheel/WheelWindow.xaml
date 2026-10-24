@@ -2,8 +2,46 @@
     x:Class="KyzWheel.App.Wheel.WheelWindow"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
-    <Grid x:Name="Root" Background="Transparent">
-        <Ellipse x:Name="Disc" Width="360" Height="360" Fill="#D90B0B10" Stroke="#33FFFFFF" StrokeThickness="1" />
-        <TextBlock Text="kyzWheel" Foreground="#E6FFFFFF" FontSize="18" HorizontalAlignment="Center" VerticalAlignment="Center" />
+    <Grid x:Name="Root" Background="Transparent" AllowDrop="True" IsTabStop="True" RequestedTheme="Dark">
+        <Canvas x:Name="Stage" Width="440" Height="440">
+            <Ellipse x:Name="Glow" Width="440" Height="440" IsHitTestVisible="False">
+                <Ellipse.Fill>
+                    <RadialGradientBrush>
+                        <GradientStop Color="#99000000" Offset="0.84" />
+                        <GradientStop Color="#33000000" Offset="0.92" />
+                        <GradientStop Color="#00000000" Offset="1.0" />
+                    </RadialGradientBrush>
+                </Ellipse.Fill>
+            </Ellipse>
+            <Canvas x:Name="Layer" Width="440" Height="440" />
+            <Ellipse Canvas.Left="24" Canvas.Top="24" Width="392" Height="392" StrokeThickness="1" IsHitTestVisible="False">
+                <Ellipse.Stroke>
+                    <LinearGradientBrush StartPoint="0.5,0" EndPoint="0.5,1">
+                        <GradientStop Color="#40FFFFFF" Offset="0" />
+                        <GradientStop Color="#08FFFFFF" Offset="0.6" />
+                        <GradientStop Color="#14FFFFFF" Offset="1" />
+                    </LinearGradientBrush>
+                </Ellipse.Stroke>
+            </Ellipse>
+            <Ellipse x:Name="Hub" Canvas.Left="148" Canvas.Top="148" Width="144" Height="144" IsHitTestVisible="False">
+                <Ellipse.Fill>
+                    <LinearGradientBrush StartPoint="0.5,0" EndPoint="0.5,1">
+                        <GradientStop Color="#FF17171E" Offset="0" />
+                        <GradientStop Color="#FF09090D" Offset="1" />
+                    </LinearGradientBrush>
+                </Ellipse.Fill>
+                <Ellipse.Stroke>
+                    <LinearGradientBrush StartPoint="0.5,0" EndPoint="0.5,1">
+                        <GradientStop Color="#38FFFFFF" Offset="0" />
+                        <GradientStop Color="#0AFFFFFF" Offset="1" />
+                    </LinearGradientBrush>
+                </Ellipse.Stroke>
+            </Ellipse>
+            <StackPanel x:Name="HubText" Canvas.Left="148" Canvas.Top="148" Width="144" Height="144" IsHitTestVisible="False" Padding="14,0">
+                <TextBlock x:Name="HubTitle" Margin="0,50,0,0" HorizontalAlignment="Center" TextAlignment="Center" TextTrimming="CharacterEllipsis" Foreground="#F5FFFFFF" FontSize="15" FontWeight="SemiBold" CharacterSpacing="-10" />
+                <TextBlock x:Name="HubSub" HorizontalAlignment="Center" TextAlignment="Center" TextTrimming="CharacterEllipsis" Foreground="#73FFFFFF" FontSize="10.5" Margin="0,3,0,0" CharacterSpacing="20" />
+                <StackPanel x:Name="Dots" Orientation="Horizontal" HorizontalAlignment="Center" Spacing="5" Margin="0,9,0,0" />
+            </StackPanel>
+        </Canvas>
     </Grid>
 </Window>
