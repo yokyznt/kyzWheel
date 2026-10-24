@@ -1,0 +1,81 @@
+using KyzWheel.Core.Input;
+using static KyzWheel.Platform.Native.User32;
+
+namespace KyzWheel.Platform.Input;
+
+public sealed class GlobalHotkeyService : IDisposable
+{
+    private readonly InputThread _input;
+    private readonly Dictionary<int, string> _ids = new();
+    private readonly Dictionary<string, Hotkey> _mouse = new();
+    private int _next = 1;
+
+    public event Action<string>? Triggered;
+
+    public GlobalHotkeyService(InputThread input)
+    {
+        _input = input;
+        _input.Hotkey += n => { if (_ids.TryGetValue(n, out var id)) Triggered?.Invoke(id); };
+        _input.Mouse += OnMouse;
+    }
+
+    public bool Register(string id, Hotkey h) => _input.Invoke(() =>
+    {
+        if (h.Mouse is not null)
+        {
+            _mouse[id] = h;
+            return true;
+        }
+        var n = _next++;
+        uint mods = MOD_NOREPEAT;
+        if (h.Mods.HasFlag(Mods.Alt)) mods |= MOD_ALT;
+        if (h.Mods.HasFlag(Mods.Ctrl)) mods |= MOD_CONTROL;
+        if (h.Mods.HasFlag(Mods.Shift)) mods |= MOD_SHIFT;
+        if (h.Mods.HasFlag(Mods.Win)) mods |= MOD_WIN;
+        if (!RegisterHotKey(0, n, mods, (uint)h.VirtualKey)) return false;
+        _ids[n] = id;
+        return true;
+    });
+
+    public void UnregisterAll() => _input.Invoke(() =>
+    {
+        foreach (var n in _ids.Keys) UnregisterHotKey(0, n);
+        _ids.Clear();
+        _mouse.Clear();
+        return true;
+    });
+
+    private bool OnMouse(MouseHookEvent e)
+    {
+        MouseButton? b = e.Kind switch
+        {
+            MouseKind.X1Down => MouseButton.X1,
+            MouseKind.X2Down => MouseButton.X2,
+            MouseKind.MiddleDown => MouseButton.Middle,
+            _ => null,
+        };
+        if (b is null || _mouse.Count == 0) return false;
+        var mods = CurrentMods();
+        foreach (var (id, h) in _mouse)
+        {
+            if (h.Mouse == b && h.Mods == mods)
+            {
+                Triggered?.Invoke(id);
+                return true;
+            }
+        }
+        return false;
+    }
+
+    public static Mods CurrentMods()
+    {
+        var m = Mods.None;
+        if (IsDown(VK_CONTROL)) m |= Mods.Ctrl;
+        if (IsDown(VK_MENU)) m |= Mods.Alt;
+        if (IsDown(VK_SHIFT)) m |= Mods.Shift;
+        if (IsDown(VK_LWIN) || IsDown(VK_RWIN)) m |= Mods.Win;
+        return m;
+    }
+
+    public void Dispose() => UnregisterAll();
+}
