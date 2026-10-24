@@ -1,0 +1,23 @@
+name: release
+on:
+  push:
+    tags: ["v*"]
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+      - run: dotnet test tests/KyzWheel.Core.Tests -c Release
+      - run: dotnet test tests/KyzWheel.Convert.Tests -c Release
+      - run: dotnet tool install -g vpk
+      - shell: pwsh
+        run: |
+          $v = "${{ github.ref_name }}".TrimStart("v")
+          ./build/publish.ps1 -Version $v -Pack
+      - shell: pwsh
+        run: vpk upload github -o Releases --repoUrl https://github.com/${{ github.repository }} --publish --releaseName "kyzWheel ${{ github.ref_name }}" --tag ${{ github.ref_name }} --token ${{ secrets.GITHUB_TOKEN }}
