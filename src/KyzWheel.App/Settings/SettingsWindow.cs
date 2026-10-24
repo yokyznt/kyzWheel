@@ -46,6 +46,11 @@ public sealed class SettingsWindow : GlassWindow
     ];
 
     private readonly Func<AppConfig, IReadOnlyList<string>> _apply;
+    private readonly List<MailAccount> _accounts;
+    private readonly StackPanel _accountList = new() { Spacing = 6 };
+
+    public Action<IReadOnlyList<MailAccount>, Action<MailAccount>>? AddAccountRequested { get; set; }
+    public Action<MailAccount>? AccountRemoved { get; set; }
     private readonly List<Draft> _slots;
     private readonly HotkeyBox _global = new();
     private readonly ListView _list = new() { CanReorderItems = true, AllowDrop = true, SelectionMode = ListViewSelectionMode.Single, Height = 240 };
@@ -71,6 +76,7 @@ public sealed class SettingsWindow : GlassWindow
     {
         _apply = apply;
         _slots = config.Slots.Select(Draft.From).ToList();
+        _accounts = (config.MailAccounts ?? []).ToList();
         _status = Muted("");
         _global.Value = config.GlobalHotkey;
         _global.RecordingChanged += r => RecordingChanged?.Invoke(r);
@@ -127,6 +133,14 @@ public sealed class SettingsWindow : GlassWindow
         _editor.Children.Add(Stack(Muted("Atajo directo (Retroceso para quitarlo)"), _slotKey));
         _editor.Children.Add(_notify);
         root.Children.Add(Card(Stack(Heading("Secciones", 15), Muted("Entre 1 y 8. Arrastra para ordenar."), _list, listButtons, _editor)));
+        var addAccount = new Button { Content = "Agregar cuenta" };
+        addAccount.Click += (_, _) => AddAccountRequested?.Invoke(_accounts, a =>
+        {
+            _accounts.Add(a);
+            RenderAccounts();
+            Save();
+        });
+        root.Children.Add(Card(Stack(Heading("Cuentas de correo", 15), Muted("Los correos recientes de todas aparecen juntos en la sección Correo."), _accountList, addAccount)));
         root.Children.Add(Card(Stack(Heading("General", 15), _autostart, _accent)));
         var footer = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 12 };
         footer.Children.Add(save);
@@ -134,11 +148,42 @@ public sealed class SettingsWindow : GlassWindow
         root.Children.Add(footer);
         Surface.Children.Add(new ScrollViewer { Content = root });
         RefreshList(0);
+        RenderAccounts();
         AppWindow.Closing += (_, e) =>
         {
             e.Cancel = true;
             AppWindow.Hide();
         };
+    }
+
+    private void RenderAccounts()
+    {
+        _accountList.Children.Clear();
+        if (_accounts.Count == 0) _accountList.Children.Add(Muted("Aún no hay cuentas."));
+        foreach (var a in _accounts)
+        {
+            var g = new Grid { ColumnSpacing = 10 };
+            g.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            g.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            g.Children.Add(KyzWheel.App.Shell.Ui.Avatar(a.Email, a.ColorHex, 30));
+            var t = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+            t.Children.Add(new TextBlock { Text = a.Email });
+            t.Children.Add(new TextBlock { Text = a.ImapHost, FontSize = 11.5, Opacity = 0.55 });
+            Grid.SetColumn(t, 1);
+            g.Children.Add(t);
+            var account = a;
+            var remove = KyzWheel.App.Shell.Ui.IconButton("\uE74D", "Quitar cuenta", () =>
+            {
+                _accounts.Remove(account);
+                AccountRemoved?.Invoke(account);
+                RenderAccounts();
+                Save();
+            });
+            Grid.SetColumn(remove, 2);
+            g.Children.Add(remove);
+            _accountList.Children.Add(g);
+        }
     }
 
     private static StackPanel Stack(params UIElement[] children)
@@ -305,7 +350,7 @@ public sealed class SettingsWindow : GlassWindow
             return;
         }
         var cfg = new AppConfig(1, _global.Value ?? "Ctrl+Alt+Space", _slots.Select(s => s.ToSlot()).ToList(),
-            (string)((ComboBoxItem)_accent.SelectedItem).Tag, _autostart.IsOn);
+            (string)((ComboBoxItem)_accent.SelectedItem).Tag, _autostart.IsOn) { MailAccounts = _accounts.ToList() };
         var errors = ConfigStore.Validate(cfg);
         if (errors.Count == 0) errors = _apply(cfg);
         _status.Text = errors.Count == 0 ? "Guardado" : string.Join(" · ", errors);

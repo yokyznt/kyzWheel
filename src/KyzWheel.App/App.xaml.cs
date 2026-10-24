@@ -1,5 +1,8 @@
 using System.Diagnostics;
 using KyzWheel.App.Converter;
+using KyzWheel.App.Mail;
+using KyzWheel.Mail;
+using KyzWheel.Platform.Secrets;
 using KyzWheel.App.Settings;
 using KyzWheel.App.Shell;
 using KyzWheel.App.Wheel;
@@ -35,6 +38,8 @@ public partial class App : Application
     private DispatcherQueueTimer? _pauseTimer;
     private DispatcherQueueTimer? _trimTimer;
     private bool _paused;
+    private MailService _mail = null!;
+    private AddAccountWindow? _addAccount;
 
     public App()
     {
@@ -59,6 +64,10 @@ public partial class App : Application
         }
         _ui = DispatcherQueue.GetForCurrentThread();
         _config = _store.Load();
+        Ui.ApplyAccent(_config.AccentHex);
+        _mail = new MailService(new CredentialManagerStore(), _ui);
+        _mail.Changed += UpdateBadges;
+        _mail.Arrived += OnMailArrived;
         _converter = new ConverterController(new ConversionCatalog(ImageConversions.All()), _toasts);
         _toasts.Init();
 
@@ -109,6 +118,8 @@ public partial class App : Application
         }
         _config = cfg;
         _store.Save(cfg);
+        _mail.Sync(cfg.MailAccounts ?? []);
+        UpdateBadges();
         UpdateAutostart(cfg.StartWithWindows);
         return errors;
     }
@@ -129,7 +140,86 @@ public partial class App : Application
 
     private WheelPage RootPage() => new("kyzWheel", _config.Slots.Select(SlotItem).ToList());
 
-    private static WheelItem SlotItem(Slot s) => new("slot:" + s.Id, s.Name, s.Glyph, s.ColorHex, 0, s);
+    private WheelItem SlotItem(Slot s) => new("slot:" + s.Id, s.Name, s.Glyph, s.ColorHex, BadgeFor(s), s);
+
+    private int BadgeFor(Slot s) => s.Type == SlotType.Mail ? _mail.Inbox.UnreadCount : 0;
+
+    private void UpdateBadges()
+    {
+        var unread = _mail.Inbox.UnreadCount;
+        foreach (var s in _config.Slots.Where(s => s.Type == SlotType.Mail)) _wheel.SetBadge("slot:" + s.Id, unread);
+        _tray?.SetTooltip(unread > 0 ? $"kyzWheel · {unread} sin leer" : "kyzWheel");
+    }
+
+    private void OnMailArrived(MailSummary m)
+    {
+        if (_config.Slots.Any(s => s.Type == SlotType.Mail && s.Notify) && m.Unread)
+            _toasts.Info(m.FromName, $"{m.Subject}\n{m.Preview}");
+    }
+
+    private void ShowMailPanel(Slot s)
+    {
+        var (x, y) = WheelCenter();
+        _wheel.HideAnimated();
+        _panel ??= new SidePanelWindow();
+        var compose = Ui.IconButton("\uE70F", "Redactar", () => OpenCompose([], null));
+        var refresh = Ui.IconButton("\uE72C", "Actualizar", () => { foreach (var a in _mail.Accounts) _mail.Restart(a.Email); });
+        var settings = Ui.IconButton("\uE713", "Cuentas", OpenSettings);
+        var sub = _mail.Accounts.Count switch
+        {
+            0 => "Sin cuentas",
+            1 => _mail.Accounts[0].Email,
+            var n => $"{n} cuentas · {_mail.Inbox.UnreadCount} sin leer",
+        };
+        _panel.Show(s.Glyph, s.ColorHex, s.Name, sub, new MailPanel(_mail, OpenMail, OpenAddAccount), [compose, refresh, settings], x, y);
+    }
+
+    private (int X, int Y) WheelCenter()
+    {
+        if (_wheel.IsShown)
+        {
+            var p = _wheel.AppWindow.Position;
+            var z = _wheel.AppWindow.Size;
+            return (p.X + z.Width / 2, p.Y + z.Height / 2);
+        }
+        return User32.CursorPosition();
+    }
+
+    private void OpenMail(MailSummary m)
+    {
+        _panel?.HidePanel();
+        var w = new MailReaderWindow(_mail, m, r => OpenCompose([], r));
+        w.CenterOnCursorMonitor();
+        w.BringToFront();
+    }
+
+    private void OpenCompose(IReadOnlyList<string> files, MailSummary? reply)
+    {
+        _panel?.HidePanel();
+        if (_mail.Accounts.Count == 0)
+        {
+            OpenAddAccount();
+            return;
+        }
+        var w = new ComposeWindow(_mail, _toasts, files, reply);
+        w.CenterOnCursorMonitor();
+        w.BringToFront();
+    }
+
+    private void OpenAddAccount()
+    {
+        _panel?.HidePanel();
+        if (_addAccount is not null)
+        {
+            _addAccount.BringToFront();
+            return;
+        }
+        _addAccount = new AddAccountWindow(_mail.Secrets, _config.MailAccounts ?? []);
+        _addAccount.Added += a => ApplyConfig(_config with { MailAccounts = [.. _config.MailAccounts ?? [], a] });
+        _addAccount.Closed += (_, _) => _addAccount = null;
+        _addAccount.CenterOnCursorMonitor();
+        _addAccount.BringToFront();
+    }
 
     private IReadOnlyList<WheelPage> DragPages(IReadOnlyList<string> files)
     {
@@ -232,10 +322,10 @@ public partial class App : Application
                     OpenConverter();
                     break;
                 case SlotType.Mail:
-                    ShowPanel(s.Name, "Aquí verás tus correos recientes de todas tus cuentas. Llega en la versión 2.");
+                    ShowMailPanel(s);
                     break;
                 case SlotType.WhatsApp:
-                    ShowPanel(s.Name, "Aquí verás tus chats y archivos recientes de WhatsApp. Llega en la versión 3.");
+                    ShowPanel(s, "Aquí verás tus chats y archivos recientes de WhatsApp. Llega en la versión 3.");
                     break;
                 case SlotType.LaunchApp:
                 case SlotType.OpenUrl:
@@ -252,13 +342,12 @@ public partial class App : Application
         }
     }
 
-    private void ShowPanel(string title, string text)
+    private void ShowPanel(Slot s, string text)
     {
-        _panel ??= new SidePanelWindow();
-        var pos = _wheel.AppWindow.Position;
-        var size = _wheel.AppWindow.Size;
+        var (x, y) = WheelCenter();
         _wheel.HideAnimated();
-        _panel.Show(title, SidePanelWindow.Message(text), pos.X + size.Width, pos.Y + size.Height / 8);
+        _panel ??= new SidePanelWindow();
+        _panel.Show(s.Glyph, s.ColorHex, s.Name, "Próximamente", MailPanel.Empty(s.Glyph, "En camino", text, null, null), [], x, y);
     }
 
     private void DropOnSlot(Slot s, IReadOnlyList<string> files)
@@ -283,7 +372,7 @@ public partial class App : Application
                     Process.Start(new ProcessStartInfo(s.Target, string.Join(' ', files.Select(f => $"\"{f}\""))) { UseShellExecute = true });
                     break;
                 case SlotType.Mail:
-                    _toasts.Info(s.Name, "Enviar por correo llega en la versión 2");
+                    OpenCompose(files, null);
                     break;
                 case SlotType.WhatsApp:
                     _toasts.Info(s.Name, "Enviar por WhatsApp llega en la versión 3");
@@ -312,7 +401,17 @@ public partial class App : Application
     {
         if (_settings is null)
         {
-            _settings = new SettingsWindow(_config, ApplyConfig);
+            _settings = new SettingsWindow(_config, ApplyConfig)
+            {
+                AddAccountRequested = (existing, done) =>
+                {
+                    var w = new AddAccountWindow(_mail.Secrets, existing);
+                    w.Added += done;
+                    w.CenterOnCursorMonitor();
+                    w.BringToFront();
+                },
+                AccountRemoved = a => _mail.Secrets.Remove(ProviderPresets.SecretKey(a.Email)),
+            };
             _settings.RecordingChanged += rec =>
             {
                 if (rec) _hotkeys!.UnregisterAll();
@@ -367,6 +466,7 @@ public partial class App : Application
             _tray?.Dispose();
             _toasts.Dispose();
             _hotkeys?.UnregisterAll();
+            _mail.StopAll();
             _input?.Dispose();
             _single?.Dispose();
         }
