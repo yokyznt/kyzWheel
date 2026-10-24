@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using KyzWheel.App.Converter;
 using KyzWheel.App.Mail;
+using KyzWheel.App.Clips;
 using KyzWheel.App.WhatsApp;
 using KyzWheel.Mail;
 using KyzWheel.Platform.Secrets;
@@ -41,6 +42,8 @@ public partial class App : Application
     private bool _paused;
     private MailService _mail = null!;
     private WhatsAppBridge _wa = null!;
+    private readonly ClipboardService _clips = new();
+    private nint _lastForeground;
     private AddAccountWindow? _addAccount;
 
     public App()
@@ -75,6 +78,7 @@ public partial class App : Application
         _mail = new MailService(new CredentialManagerStore(), _ui);
         _mail.Changed += UpdateBadges;
         _mail.Arrived += OnMailArrived;
+        _clips.Start();
         _wa = new WhatsAppBridge(_ui);
         _wa.StatusChanged += UpdateBadges;
         _wa.ChatsChanged += () => _ = RefreshWaUnreadAsync();
@@ -232,6 +236,23 @@ public partial class App : Application
         _panel.Show(s.Glyph, s.ColorHex, s.Name, sub, new MailPanel(_mail, OpenMail, OpenAddAccount), [compose, refresh, settings], x, y);
     }
 
+    private void ShowClipboardPanel(Slot s)
+    {
+        var (x, y) = WheelCenter();
+        _wheel.HideAnimated();
+        _panel ??= new SidePanelWindow();
+        var clear = Ui.IconButton("\uE894", "Borrar todo (menos fijados)", () => _clips.History.ClearUnpinned());
+        _panel.Show(s.Glyph, s.ColorHex, s.Name, $"{_clips.History.Items.Count} elementos", new ClipboardPanel(_clips, PasteClip), [clear], x, y);
+    }
+
+    private async void PasteClip(KyzWheel.Core.Clipboard.ClipItem item)
+    {
+        await _clips.CopyAsync(item);
+        _panel?.HidePanel();
+        var target = _lastForeground;
+        await Task.Run(() => KyzWheel.Platform.Native.Keys.PasteInto(target));
+    }
+
     private (int X, int Y) WheelCenter()
     {
         if (_wheel.IsShown)
@@ -309,6 +330,7 @@ public partial class App : Application
                 return;
             }
             var fg = KyzWheel.Platform.Shell.ShellSelection.Foreground();
+            _lastForeground = fg;
             var selected = KyzWheel.Platform.Shell.ShellSelection.Selected(fg);
             if (selected.Count > 0)
             {
@@ -327,6 +349,8 @@ public partial class App : Application
 
     private void OpenWheelAtCursor(Stopwatch sw)
     {
+        var fgNow = KyzWheel.Platform.Shell.ShellSelection.Foreground();
+        if (fgNow != 0 && fgNow != _wheel.GetWindowHandleSafe()) _lastForeground = fgNow;
         _trimTimer?.Stop();
         var (x, y) = User32.CursorPosition();
         _wheel.ShowRoot(x, y, RootPage(), sw);
@@ -393,6 +417,9 @@ public partial class App : Application
                     break;
                 case SlotType.Mail:
                     ShowMailPanel(s);
+                    break;
+                case SlotType.Clipboard:
+                    ShowClipboardPanel(s);
                     break;
                 case SlotType.WhatsApp:
                     ShowWhatsAppPanel(s, []);

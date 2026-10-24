@@ -51,6 +51,8 @@ public sealed partial class WheelWindow : Window
     public Func<IReadOnlyList<string>, IReadOnlyList<WheelPage>>? PagesForFiles { get; set; }
 
     public bool IsShown => _shown;
+
+    public nint GetWindowHandleSafe() => this.GetWindowHandle();
     public WheelMode Mode => _mode;
 
     public WheelWindow()
