@@ -18,26 +18,28 @@
             </Ellipse>
             <Ellipse x:Name="Groove" Canvas.Left="110" Canvas.Top="110" Width="140" Height="140" StrokeThickness="1.5" Fill="#26000000" Stroke="#1FFFFFFF" IsHitTestVisible="False" />
             <Canvas x:Name="Pointer" Width="360" Height="360" Opacity="0" IsHitTestVisible="False">
-                <Path x:Name="PointerArc" StrokeThickness="3" StrokeStartLineCap="Round" StrokeEndLineCap="Round" Data="M 162.6,112.2 A 70,70 0 0 1 197.4,112.2" />
+                <Path x:Name="PointerArc" StrokeThickness="3" StrokeStartLineCap="Round" StrokeEndLineCap="Round" />
                 <Ellipse x:Name="PointerDot" Width="0" Height="0" />
             </Canvas>
             <Ellipse x:Name="HubSheen" Canvas.Left="122" Canvas.Top="122" Width="116" Height="116" IsHitTestVisible="False" Canvas.ZIndex="1" />
             <Ellipse x:Name="Hub" Canvas.Left="122" Canvas.Top="122" Width="116" Height="116" IsHitTestVisible="False" />
-            <Grid x:Name="HubText" Canvas.ZIndex="2" Canvas.Left="122" Canvas.Top="122" Width="116" Height="116" IsHitTestVisible="False">
-                <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="5">
-                    <Grid x:Name="HubThumbHost" Width="40" Height="40" HorizontalAlignment="Center" Visibility="Collapsed">
-                        <Border CornerRadius="10" Background="#14FFFFFF" BorderBrush="#33FFFFFF" BorderThickness="1" />
-                        <Image x:Name="HubThumb" Width="34" Height="34" Stretch="Uniform" />
-                        <Border x:Name="HubCount" CornerRadius="9" MinWidth="18" Height="18" Padding="5,0" Background="#F2FFFFFF" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,-6,-8,0" Visibility="Collapsed">
-                            <TextBlock x:Name="HubCountText" FontSize="10.5" FontWeight="SemiBold" Foreground="#FF0B0B10" HorizontalAlignment="Center" VerticalAlignment="Center" />
-                        </Border>
-                    </Grid>
+            <Ellipse x:Name="HubPreview" Canvas.ZIndex="2" Canvas.Left="124" Canvas.Top="124" Width="112" Height="112" Stroke="#40FFFFFF" StrokeThickness="1" IsHitTestVisible="False" Visibility="Collapsed">
+                <Ellipse.Fill>
+                    <ImageBrush x:Name="HubPreviewBrush" Stretch="UniformToFill" AlignmentX="Center" AlignmentY="Center" />
+                </Ellipse.Fill>
+            </Ellipse>
+            <Grid x:Name="HubText" Canvas.ZIndex="3" Canvas.Left="122" Canvas.Top="122" Width="116" Height="116" IsHitTestVisible="False">
+                <Image x:Name="HubThumb" Width="60" Height="60" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="Collapsed" />
+                <Border x:Name="HubCount" CornerRadius="10" MinWidth="20" Height="20" Padding="6,0" Background="#F2FFFFFF" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,8,8,0" Visibility="Collapsed">
+                    <TextBlock x:Name="HubCountText" FontFamily="ms-appx:///Assets/Fonts/Outfit.ttf#Outfit" FontSize="11" FontWeight="SemiBold" Foreground="#FF0B0B10" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                </Border>
+                <StackPanel x:Name="HubLabels" VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="5">
                     <Border x:Name="HubPill" CornerRadius="15" Height="30" MinWidth="64" MaxWidth="104" Padding="12,0" HorizontalAlignment="Center" Background="#1FFFFFFF" BorderBrush="#26FFFFFF" BorderThickness="1">
                         <TextBlock x:Name="HubTitle" VerticalAlignment="Center" HorizontalAlignment="Center" TextAlignment="Center" TextTrimming="CharacterEllipsis" Foreground="#F5FFFFFF" FontFamily="ms-appx:///Assets/Fonts/Outfit.ttf#Outfit" FontSize="12" FontWeight="SemiBold" CharacterSpacing="30" />
                     </Border>
                     <TextBlock x:Name="HubSub" HorizontalAlignment="Center" TextAlignment="Center" TextTrimming="CharacterEllipsis" MaxWidth="100" FontFamily="ms-appx:///Assets/Fonts/Outfit.ttf#Outfit" Foreground="#66FFFFFF" FontSize="8.5" CharacterSpacing="60" />
-                    <StackPanel x:Name="Dots" Orientation="Horizontal" HorizontalAlignment="Center" Spacing="5" />
                 </StackPanel>
+                <StackPanel x:Name="Dots" Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,14" Spacing="5" />
             </Grid>
         </Canvas>
     </Grid>

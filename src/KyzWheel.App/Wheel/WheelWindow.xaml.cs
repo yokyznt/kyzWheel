@@ -26,6 +26,9 @@ public sealed partial class WheelWindow : Window
     private const double GapPx = 9;
     private const double CornerOut = 24;
     private const double CornerIn = 15;
+    private const double GrooveR = 70;
+    private const double StickR = 60;
+    private const double StickDead = 14;
 
     private sealed record SliceVisual(Canvas Group, Path Body, Path Halo, Border Badge, WheelItem Item);
 
@@ -43,6 +46,11 @@ public sealed partial class WheelWindow : Window
     private string? _hubDefault;
     private bool _locked;
     private (int L, int T, int R, int B) _lockRect;
+    private (int X, int Y) _lockCenter;
+    private (int X, int Y) _restore;
+    private double _scale = 1;
+    private double _sx;
+    private double _sy;
     private readonly Microsoft.UI.Dispatching.DispatcherQueueTimer _lockTimer;
     private Stopwatch? _perf;
 
@@ -95,7 +103,7 @@ public sealed partial class WheelWindow : Window
         _lockTimer = DispatcherQueue.CreateTimer();
         _lockTimer.Interval = TimeSpan.FromMilliseconds(200);
         _lockTimer.Tick += (_, _) => { if (_locked && _shown) ApplyLock(); };
-        Root.PointerExited += (_, _) => SetHover(-1);
+        Root.PointerExited += (_, _) => { if (!_locked) SetHover(-1); };
         Root.KeyDown += OnKeyDown;
         Root.DragEnter += OnDragEnter;
         Root.DragOver += OnDragOver;
@@ -108,7 +116,7 @@ public sealed partial class WheelWindow : Window
                 _activeSinceShow = true;
                 return;
             }
-            if (_mode == WheelMode.Root && _shown && _activeSinceShow && Environment.TickCount64 - _shownAt > 400) HideAnimated();
+            if (!_locked && _mode == WheelMode.Root && _shown && _activeSinceShow && Environment.TickCount64 - _shownAt > 400) HideAnimated();
         };
         AppWindow.Closing += (_, e) =>
         {
@@ -161,30 +169,47 @@ public sealed partial class WheelWindow : Window
 
     private async void SetHubFile(IReadOnlyList<string> files)
     {
-        HubThumbHost.Visibility = Visibility.Visible;
-        HubTitle.Margin = new Thickness(0, 0, 0, 0);
+        var token = ++_previewToken;
+        HubLabels.Visibility = Visibility.Collapsed;
         HubCount.Visibility = files.Count > 1 ? Visibility.Visible : Visibility.Collapsed;
         HubCountText.Text = files.Count > 99 ? "99+" : files.Count.ToString();
+        HubPreview.Visibility = Visibility.Collapsed;
+        HubPreviewBrush.ImageSource = null;
         HubThumb.Source = null;
+        HubThumb.Visibility = Visibility.Visible;
         try
         {
             var path = files[0];
             Windows.Storage.FileProperties.StorageItemThumbnail thumb = Directory.Exists(path)
-                ? await (await StorageFolder.GetFolderFromPathAsync(path)).GetThumbnailAsync(Windows.Storage.FileProperties.ThumbnailMode.SingleItem, 96)
-                : await (await StorageFile.GetFileFromPathAsync(path)).GetThumbnailAsync(Windows.Storage.FileProperties.ThumbnailMode.SingleItem, 96);
+                ? await (await StorageFolder.GetFolderFromPathAsync(path)).GetThumbnailAsync(Windows.Storage.FileProperties.ThumbnailMode.SingleItem, 320, Windows.Storage.FileProperties.ThumbnailOptions.ResizeThumbnail)
+                : await (await StorageFile.GetFileFromPathAsync(path)).GetThumbnailAsync(Windows.Storage.FileProperties.ThumbnailMode.SingleItem, 320, Windows.Storage.FileProperties.ThumbnailOptions.ResizeThumbnail);
             var bmp = new Microsoft.UI.Xaml.Media.Imaging.BitmapImage();
             await bmp.SetSourceAsync(thumb);
-            if (_dragFiles.Count > 0) HubThumb.Source = bmp;
+            if (token != _previewToken || _dragFiles.Count == 0) return;
+            if (thumb.Type == Windows.Storage.FileProperties.ThumbnailType.Image)
+            {
+                HubPreviewBrush.ImageSource = bmp;
+                HubPreview.Visibility = Visibility.Visible;
+                HubThumb.Visibility = Visibility.Collapsed;
+            }
+            else HubThumb.Source = bmp;
         }
         catch (Exception)
         {
         }
     }
 
+    private int _previewToken;
+
     private void ClearHubFile()
     {
-        HubThumbHost.Visibility = Visibility.Collapsed;
-        HubTitle.Margin = new Thickness(0);
+        _previewToken++;
+        HubLabels.Visibility = Visibility.Visible;
+        HubThumb.Visibility = Visibility.Collapsed;
+        HubThumb.Source = null;
+        HubPreview.Visibility = Visibility.Collapsed;
+        HubPreviewBrush.ImageSource = null;
+        HubCount.Visibility = Visibility.Collapsed;
         _hubDefault = null;
     }
 
@@ -210,12 +235,18 @@ public sealed partial class WheelWindow : Window
         var (cx, cy) = WheelGeometry.ClampToWorkArea(x, y, px / 2.0, new KyzWheel.Core.Wheel.Rect(wa.X, wa.Y, wa.W, wa.H));
         AppWindow.MoveAndResize(new Windows.Graphics.RectInt32((int)cx - px / 2, (int)cy - px / 2, px, px));
         Dwm.ClipCircle(this.GetWindowHandle(), px, (DiscR + 1) * scale);
-        _locked = _mode == WheelMode.Files;
+        _locked = _mode != WheelMode.Drag;
+        _scale = scale;
+        _sx = 0;
+        _sy = 0;
         if (_locked)
         {
-            _lockRect = WheelGeometry.LockRect((int)cx, (int)cy, (Ro - 10) * scale);
+            if (!CursorLock.Active) _restore = User32.CursorPosition();
+            _lockCenter = ((int)cx, (int)cy);
+            _lockRect = WheelGeometry.LockRect((int)cx, (int)cy, Ri * scale);
             CursorLock.MoveTo((int)cx, (int)cy);
             ApplyLock();
+            CursorLock.Hide();
             _lockTimer.Start();
         }
         BuildPage(0);
@@ -246,11 +277,12 @@ public sealed partial class WheelWindow : Window
 
     private void Unlock()
     {
-        WheelAnimations.PointTo(Pointer, 0, false);
         if (!_locked) return;
         _locked = false;
         _lockTimer.Stop();
         CursorLock.Release();
+        CursorLock.Show();
+        CursorLock.MoveTo(_restore.X, _restore.Y);
     }
 
     public void HideAnimated()
@@ -292,6 +324,8 @@ public sealed partial class WheelWindow : Window
         _parent = parent;
         _pages = [WheelFit.Fit(page, parent.ColorHex)];
         _page = 0;
+        _sx = 0;
+        _sy = 0;
         SetHover(-1);
         BuildPage(0);
         WheelAnimations.Drill(Layer, true);
@@ -317,6 +351,8 @@ public sealed partial class WheelWindow : Window
         _pages = pages;
         _page = page;
         _parent = parent;
+        _sx = 0;
+        _sy = 0;
         SetHover(-1);
         BuildPage(_page);
         WheelAnimations.Drill(Layer, false);
@@ -398,6 +434,7 @@ public sealed partial class WheelWindow : Window
             Layer.Children.Add(group);
             _slices.Add(new SliceVisual(group, body, halo, badge, item));
         }
+        PointerArc.Data = PointerGeometry(n);
         HubTitle.Text = _hubDefault ?? page.Title;
         HubSub.Text = _mode switch
         {
@@ -518,6 +555,19 @@ public sealed partial class WheelWindow : Window
         return pg;
     }
 
+    private static Geometry PointerGeometry(int n)
+    {
+        if (n <= 1) return new EllipseGeometry { Center = new Point(C, C), RadiusX = GrooveR, RadiusY = GrooveR };
+        var half = 180.0 / n - (GapPx / 2 + 1.5) / GrooveR * 180 / Math.PI;
+        var (x0, y0) = Polar(-half, GrooveR);
+        var (x1, y1) = Polar(half, GrooveR);
+        var fig = new PathFigure { StartPoint = new Point(x0, y0), IsClosed = false, IsFilled = false };
+        fig.Segments.Add(new ArcSegment { Point = new Point(x1, y1), Size = new Size(GrooveR, GrooveR), SweepDirection = SweepDirection.Clockwise, IsLargeArc = half > 90 });
+        var g = new PathGeometry();
+        g.Figures.Add(fig);
+        return g;
+    }
+
     private static Windows.UI.Color ParseColor(string hex)
     {
         var h = hex.TrimStart('#');
@@ -538,6 +588,7 @@ public sealed partial class WheelWindow : Window
         if (index == _hover) return;
         if (_hover >= 0 && _hover < _slices.Count) WheelAnimations.Hover(_slices[_hover].Group, _slices[_hover].Halo, false, MidDeg(_hover));
         _hover = index;
+        WheelAnimations.PointTo(Pointer, _hover >= 0 ? MidDeg(_hover) : 0, _hover >= 0);
         if (_hover >= 0)
         {
             WheelAnimations.Hover(_slices[_hover].Group, _slices[_hover].Halo, true, MidDeg(_hover));
@@ -553,22 +604,32 @@ public sealed partial class WheelWindow : Window
 
     private void OnPointerMoved(object sender, PointerRoutedEventArgs e)
     {
-        var p = e.GetCurrentPoint(Stage).Position;
-        var idx = HitTest(p);
-        SetHover(idx);
-        if (_locked)
+        if (!_locked)
         {
-            var dx = p.X - C;
-            var dy = p.Y - C;
-            var deg = Math.Atan2(dx, -dy) * 180 / Math.PI;
-            WheelAnimations.PointTo(Pointer, deg, Math.Sqrt(dx * dx + dy * dy) >= Ri * 0.55);
+            SetHover(HitTest(e.GetCurrentPoint(Stage).Position));
+            return;
         }
+        var (x, y) = User32.CursorPosition();
+        var dx = (x - _lockCenter.X) / _scale;
+        var dy = (y - _lockCenter.Y) / _scale;
+        if (dx == 0 && dy == 0) return;
+        CursorLock.MoveTo(_lockCenter.X, _lockCenter.Y);
+        _sx += dx;
+        _sy += dy;
+        var m = Math.Sqrt(_sx * _sx + _sy * _sy);
+        if (m > StickR)
+        {
+            _sx *= StickR / m;
+            _sy *= StickR / m;
+            m = StickR;
+        }
+        if (m >= StickDead && _slices.Count > 0) SetHover(WheelGeometry.SliceAtAngle(_sx, _sy, _slices.Count, 0));
     }
 
     private void OnPointerReleased(object sender, PointerRoutedEventArgs e)
     {
         if (e.GetCurrentPoint(Stage).Properties.PointerUpdateKind == Microsoft.UI.Input.PointerUpdateKind.RightButtonReleased) return;
-        Choose(HitTest(e.GetCurrentPoint(Stage).Position));
+        Choose(_locked ? _hover : HitTest(e.GetCurrentPoint(Stage).Position));
     }
 
     private void Choose(int idx)
