@@ -72,6 +72,69 @@ test('persistence roundtrip', () => {
 
 test('text of wrapped and media messages', () => {
   assert.equal(textOf({ ephemeralMessage: { message: { extendedTextMessage: { text: 'efímero' } } } }), 'efímero')
-  assert.equal(textOf({ audioMessage: {} }), '🎤 Audio')
+  assert.equal(textOf({ audioMessage: {} }), '🎵 Audio')
   assert.equal(textOf({ documentMessage: { fileName: 'a.pdf' } }), '📄 a.pdf')
+})
+
+test('lid chat gets saved contact name through alias', () => {
+  const s = createStore(null)
+  s.upsertContacts([{ id: '5215550001111@s.whatsapp.net', name: 'Mamá' }])
+  s.upsertMessages([msg('123456789@lid', 'x1', 50, { conversation: 'hola hijo' }, { pushName: 'Lupita', key: { remoteJid: '123456789@lid', remoteJidAlt: '5215550001111@s.whatsapp.net', id: 'x1', fromMe: false } })])
+  assert.equal(s.recentChats(1)[0].name, 'Mamá')
+  assert.equal(s.recentChats(1)[0].phone, '+5215550001111')
+})
+
+test('falls back to push name then phone', () => {
+  const s = createStore(null)
+  s.upsertMessages([msg('5215550002222@s.whatsapp.net', 'p1', 10, { conversation: 'hey' }, { pushName: 'Beto' })])
+  s.upsertMessages([msg('5215550003333@s.whatsapp.net', 'p2', 11, { conversation: 'yo' })])
+  const names = Object.fromEntries(s.recentChats(5).map((c) => [c.jid, c.name]))
+  assert.equal(names['5215550002222@s.whatsapp.net'], 'Beto')
+  assert.equal(names['5215550003333@s.whatsapp.net'], '+5215550003333')
+})
+
+test('saved name is not overwritten by notify', () => {
+  const s = createStore(null)
+  s.upsertContacts([{ id: 'a@s.whatsapp.net', name: 'Ana Trabajo' }])
+  s.upsertContacts([{ id: 'a@s.whatsapp.net', notify: 'ana🌸' }])
+  s.upsertMessages([msg('a@s.whatsapp.net', '1', 1, { conversation: 'x' })])
+  assert.equal(s.recentChats(1)[0].name, 'Ana Trabajo')
+})
+
+test('group names and sender prefixes', () => {
+  const s = createStore(null)
+  s.setGroupNames({ 'g1@g.us': { subject: 'Familia' } })
+  s.upsertContacts([{ id: 'p@s.whatsapp.net', name: 'Tío Juan' }])
+  s.upsertMessages([{ key: { remoteJid: 'g1@g.us', id: 'g', fromMe: false, participant: 'p@s.whatsapp.net' }, messageTimestamp: 5, pushName: 'juanito', message: { conversation: 'qué onda' } }])
+  const c = s.recentChats(1)[0]
+  assert.equal(c.name, 'Familia')
+  assert.equal(c.lastText, 'Tío: qué onda')
+  assert.equal(s.messages('g1@g.us')[0].sender, 'Tío Juan')
+})
+
+test('media keeps kind, thumb and download keys but lean list hides keys', () => {
+  const s = createStore(null)
+  s.upsertMessages([msg('a@s.whatsapp.net', 'i', 1, { imageMessage: { mimetype: 'image/jpeg', jpegThumbnail: Buffer.from([1, 2, 3]), mediaKey: Buffer.from([9, 9]), directPath: '/v/t62/x', caption: 'mira' } })])
+  const m = s.messages('a@s.whatsapp.net')[0]
+  assert.equal(m.file.kind, 'image')
+  assert.equal(m.file.thumb, 'AQID')
+  assert.equal(m.caption, 'mira')
+  assert.equal(m.file.media, undefined)
+  assert.equal(s.findMessage('a@s.whatsapp.net', 'i').file.media.mediaKey, 'CQk=')
+})
+
+test('stickers, voice notes and locations are shown; reactions skipped', () => {
+  const s = createStore(null)
+  s.upsertMessages([
+    msg('a@s.whatsapp.net', 's', 1, { stickerMessage: { mimetype: 'image/webp' } }),
+    msg('a@s.whatsapp.net', 'v', 2, { audioMessage: { mimetype: 'audio/ogg; codecs=opus', ptt: true, seconds: 7 } }),
+    msg('a@s.whatsapp.net', 'l', 3, { locationMessage: { degreesLatitude: 1 } }),
+    msg('a@s.whatsapp.net', 'r', 4, { reactionMessage: { text: '❤' } }),
+  ])
+  const list = s.messages('a@s.whatsapp.net')
+  assert.deepEqual(list.map((m) => m.id), ['s', 'v', 'l'])
+  assert.equal(list[0].file.kind, 'sticker')
+  assert.equal(list[1].file.ptt, true)
+  assert.equal(list[1].file.seconds, 7)
+  assert.equal(list[2].text, '📍 Ubicación')
 })

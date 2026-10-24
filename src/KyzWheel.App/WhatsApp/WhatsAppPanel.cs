@@ -209,7 +209,7 @@ public sealed class WhatsAppPanel : Grid
         var g = new Grid { ColumnSpacing = 12, Padding = new Thickness(10, 9, 10, 9) };
         g.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        g.Children.Add(Ui.Avatar(c.Name, c.IsGroup ? "#38BDF8" : Green, 38));
+        g.Children.Add(Avatar(c.Name, c.IsGroup ? "#38BDF8" : Green, 38, c.Jid));
         var t = new StackPanel { Spacing = 1, VerticalAlignment = VerticalAlignment.Center };
         var top = new Grid();
         top.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
@@ -332,11 +332,12 @@ public sealed class WhatsAppPanel : Grid
             _open = null;
             _ = RenderAsync();
         }));
-        var av = Ui.Avatar(c.Name, c.IsGroup ? "#38BDF8" : Green, 30);
+        var av = Avatar(c.Name, c.IsGroup ? "#38BDF8" : Green, 34, c.Jid);
         SetColumn(av, 1);
         head.Children.Add(av);
-        var name = Ui.Label(c.Name, 14, bold: true);
-        name.VerticalAlignment = VerticalAlignment.Center;
+        var name = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Spacing = 0 };
+        name.Children.Add(Ui.Label(c.Name, 14, bold: true));
+        if (c.Phone is { } phone && phone != c.Name) name.Children.Add(Ui.Label(phone, 11, Ui.Tertiary));
         SetColumn(name, 2);
         head.Children.Add(name);
         g.Children.Add(head);
@@ -387,12 +388,249 @@ public sealed class WhatsAppPanel : Grid
         return g;
     }
 
-    private static UIElement Bubble(WaMessage m, bool group)
+    private static readonly Dictionary<string, string?> AvatarCache = new();
+
+    private Grid Avatar(string name, string color, double size, string jid)
     {
-        var s = new StackPanel { Spacing = 2 };
-        if (group && !m.FromMe && !string.IsNullOrEmpty(m.Sender)) s.Children.Add(Ui.Label(m.Sender, 11, Ui.Parse("#38BDF8"), bold: true));
-        var text = new TextBlock { Text = m.Text, TextWrapping = TextWrapping.Wrap, FontSize = 13, IsTextSelectionEnabled = true, Foreground = Ui.Brush(Ui.Text) };
-        s.Children.Add(text);
+        var g = Ui.Avatar(name, color, size);
+        _ = LoadAvatarAsync(g, jid, size);
+        return g;
+    }
+
+    private async Task LoadAvatarAsync(Grid g, string jid, double size)
+    {
+        if (!AvatarCache.TryGetValue(jid, out var path))
+        {
+            try
+            {
+                path = await _wa.AvatarAsync(jid);
+            }
+            catch (Exception e) when (e is WaException or TimeoutException or InvalidOperationException)
+            {
+                return;
+            }
+            AvatarCache[jid] = path;
+        }
+        if (path is null || !File.Exists(path)) return;
+        var img = new Microsoft.UI.Xaml.Media.Imaging.BitmapImage { DecodePixelWidth = (int)(size * 2) };
+        img.UriSource = new Uri(path);
+        g.Children.Add(new Microsoft.UI.Xaml.Shapes.Ellipse { Fill = new Microsoft.UI.Xaml.Media.ImageBrush { ImageSource = img, Stretch = Microsoft.UI.Xaml.Media.Stretch.UniformToFill } });
+    }
+
+    private static async Task<Microsoft.UI.Xaml.Media.Imaging.BitmapImage?> FromBase64Async(string? b64)
+    {
+        if (string.IsNullOrEmpty(b64)) return null;
+        try
+        {
+            var bytes = System.Convert.FromBase64String(b64);
+            using var ms = new Windows.Storage.Streams.InMemoryRandomAccessStream();
+            using (var w = new Windows.Storage.Streams.DataWriter(ms.GetOutputStreamAt(0)))
+            {
+                w.WriteBytes(bytes);
+                await w.StoreAsync();
+            }
+            var bmp = new Microsoft.UI.Xaml.Media.Imaging.BitmapImage();
+            await bmp.SetSourceAsync(ms);
+            return bmp;
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
+    private static string FormatSize(long b) => b switch
+    {
+        < 1024 => $"{b} B",
+        < 1024 * 1024 => $"{b / 1024.0:0} KB",
+        _ => $"{b / 1048576.0:0.0} MB",
+    };
+
+    private static string Duration(int s) => $"{s / 60}:{s % 60:00}";
+
+    private static void OpenPath(string path) => System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(path) { UseShellExecute = true });
+
+    private UIElement MediaView(WaFile f)
+    {
+        var host = new Grid();
+        switch (f.Kind)
+        {
+            case "image":
+            case "sticker":
+            {
+                var sticker = f.Kind == "sticker";
+                double w = sticker ? 130 : 236;
+                double h = sticker ? 130 : f.Width > 0 && f.Height > 0 ? Math.Clamp(w * f.Height / f.Width, 90, 300) : 170;
+                var img = new Image { Width = w, Height = h, Stretch = sticker ? Microsoft.UI.Xaml.Media.Stretch.Uniform : Microsoft.UI.Xaml.Media.Stretch.UniformToFill };
+                var frame = new Border { CornerRadius = new CornerRadius(sticker ? 0 : 10), Child = img, Background = Ui.Brush(sticker ? Colors.Transparent : ColorHelper.FromArgb(0x22, 0xFF, 0xFF, 0xFF)) };
+                host.Children.Add(frame);
+                async Task Load()
+                {
+                    if (await FromBase64Async(f.Thumb) is { } t && img.Source is null) img.Source = t;
+                    try
+                    {
+                        var p = await _wa.MediaPathAsync(f);
+                        img.Source = new Microsoft.UI.Xaml.Media.Imaging.BitmapImage(new Uri(p)) { DecodePixelWidth = (int)(w * 2) };
+                        frame.Tag = p;
+                    }
+                    catch (Exception e) when (e is WaException or TimeoutException) { }
+                }
+                _ = Load();
+                frame.Tapped += (_, _) => { if (frame.Tag is string p) OpenPath(p); };
+                Ui.Pressable(frame, frame);
+                break;
+            }
+            case "video":
+            {
+                var w = 236.0;
+                var h = f.Width > 0 && f.Height > 0 ? Math.Clamp(w * f.Height / f.Width, 120, 320) : 150;
+                var img = new Image { Width = w, Height = h, Stretch = Microsoft.UI.Xaml.Media.Stretch.UniformToFill };
+                var overlay = new Grid();
+                overlay.Children.Add(img);
+                var play = new Grid { Width = 46, Height = 46, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
+                play.Children.Add(new Microsoft.UI.Xaml.Shapes.Ellipse { Fill = Ui.Brush(ColorHelper.FromArgb(0x99, 0, 0, 0)) });
+                var icon = Ui.Icon("\uE768", 18, Colors.White);
+                icon.HorizontalAlignment = HorizontalAlignment.Center;
+                play.Children.Add(icon);
+                overlay.Children.Add(play);
+                if (f.Seconds > 0)
+                {
+                    var d = new Border { CornerRadius = new CornerRadius(6), Padding = new Thickness(6, 1, 6, 2), Margin = new Thickness(6), Background = Ui.Brush(ColorHelper.FromArgb(0x99, 0, 0, 0)), HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Bottom, Child = Ui.Label(Duration(f.Seconds), 10.5, Colors.White) };
+                    overlay.Children.Add(d);
+                }
+                var frame = new Border { CornerRadius = new CornerRadius(10), Child = overlay, Width = w, Height = h, Background = Ui.Brush(ColorHelper.FromArgb(0x33, 0, 0, 0)) };
+                host.Children.Add(frame);
+                _ = LoadThumbAsync(img, f.Thumb);
+                Ui.Pressable(frame, frame);
+                frame.Tapped += async (_, _) =>
+                {
+                    icon.Glyph = "\uE895";
+                    try
+                    {
+                        var p = await _wa.MediaPathAsync(f);
+                        var player = new MediaPlayerElement { Source = Windows.Media.Core.MediaSource.CreateFromUri(new Uri(p)), AreTransportControlsEnabled = true, AutoPlay = true, Width = w, Height = h, Stretch = Microsoft.UI.Xaml.Media.Stretch.Uniform };
+                        frame.Child = player;
+                        frame.Tag = p;
+                    }
+                    catch (WaException e)
+                    {
+                        icon.Glyph = "\uE783";
+                        _note.Text = e.Message;
+                    }
+                };
+                break;
+            }
+            case "audio":
+            {
+                var row = new Grid { ColumnSpacing = 10, Width = 230 };
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                var btn = new Grid { Width = 36, Height = 36 };
+                btn.Children.Add(new Microsoft.UI.Xaml.Shapes.Ellipse { Fill = Ui.Brush(Ui.Parse(Green, 0x40)) });
+                var icon = Ui.Icon("\uE768", 14, Colors.White);
+                icon.HorizontalAlignment = HorizontalAlignment.Center;
+                btn.Children.Add(icon);
+                row.Children.Add(btn);
+                var info = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Spacing = 3 };
+                var wave = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 2, Height = 18 };
+                var rnd = new Random(f.MessageId.GetHashCode());
+                for (var i = 0; i < 26; i++) wave.Children.Add(new Border { Width = 3, Height = 4 + rnd.Next(13), CornerRadius = new CornerRadius(1.5), VerticalAlignment = VerticalAlignment.Center, Background = Ui.Brush(ColorHelper.FromArgb(0x88, 0xFF, 0xFF, 0xFF)) });
+                info.Children.Add(wave);
+                info.Children.Add(Ui.Label((f.Ptt ? "Nota de voz" : "Audio") + (f.Seconds > 0 ? " · " + Duration(f.Seconds) : ""), 11, Ui.Tertiary));
+                SetColumn(info, 1);
+                row.Children.Add(info);
+                var surface = new Border { Child = row, Background = Ui.Brush(Colors.Transparent) };
+                host.Children.Add(surface);
+                Ui.Pressable(surface, surface);
+                surface.Tapped += async (_, _) =>
+                {
+                    if (surface.Tag is MediaPlayerElement) return;
+                    icon.Glyph = "\uE895";
+                    try
+                    {
+                        var p = await _wa.MediaPathAsync(f);
+                        var player = new MediaPlayerElement { Source = Windows.Media.Core.MediaSource.CreateFromUri(new Uri(p)), AreTransportControlsEnabled = true, AutoPlay = true, Width = 240, Height = 56 };
+                        player.TransportControls.IsCompact = true;
+                        player.TransportControls.IsZoomButtonVisible = false;
+                        surface.Tag = player;
+                        surface.Child = player;
+                    }
+                    catch (WaException e)
+                    {
+                        icon.Glyph = "\uE783";
+                        _note.Text = e.Message;
+                    }
+                };
+                break;
+            }
+            default:
+            {
+                var row = new Grid { ColumnSpacing = 10, Width = 230, Padding = new Thickness(8) };
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+                var ext = Path.GetExtension(f.FileName).TrimStart('.').ToUpperInvariant();
+                var badge = new Border { Width = 36, Height = 42, CornerRadius = new CornerRadius(6), Background = Ui.Brush(Ui.Parse(ext == "PDF" ? "#EF4444" : ext is "DOC" or "DOCX" ? "#3B82F6" : ext is "XLS" or "XLSX" ? "#22C55E" : "#64748B", 0xCC)), Child = Ui.Label(ext.Length > 4 ? ext[..4] : ext, 9.5, Colors.White, bold: true) };
+                ((TextBlock)badge.Child).HorizontalAlignment = HorizontalAlignment.Center;
+                ((TextBlock)badge.Child).VerticalAlignment = VerticalAlignment.Center;
+                row.Children.Add(badge);
+                var info = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Spacing = 2 };
+                info.Children.Add(Ui.Label(f.FileName, 12.5, Ui.Text, maxLines: 2));
+                info.Children.Add(Ui.Label(f.Size > 0 ? FormatSize(f.Size) : ext, 11, Ui.Tertiary));
+                SetColumn(info, 1);
+                row.Children.Add(info);
+                var dl = Ui.Icon("\uE896", 14, Ui.Secondary);
+                dl.VerticalAlignment = VerticalAlignment.Center;
+                SetColumn(dl, 2);
+                row.Children.Add(dl);
+                var surface = new Border { Child = row, CornerRadius = new CornerRadius(10), Background = Ui.Brush(ColorHelper.FromArgb(0x1A, 0, 0, 0)) };
+                host.Children.Add(surface);
+                Ui.Pressable(surface, surface);
+                surface.Tapped += async (_, _) =>
+                {
+                    dl.Glyph = "\uE895";
+                    try
+                    {
+                        var p = surface.Tag as string ?? await _wa.DownloadAsync(f);
+                        surface.Tag = p;
+                        dl.Glyph = "\uE8E5";
+                        OpenPath(p);
+                    }
+                    catch (WaException e)
+                    {
+                        dl.Glyph = "\uE783";
+                        _note.Text = e.Message;
+                    }
+                };
+                break;
+            }
+        }
+        return host;
+    }
+
+    private static string NameColor(string name)
+    {
+        string[] palette = ["#38BDF8", "#F472B6", "#FBBF24", "#A78BFA", "#34D399", "#FB923C", "#F87171", "#60A5FA"];
+        return palette[(int)((uint)name.GetHashCode() % palette.Length)];
+    }
+
+    private static async Task LoadThumbAsync(Image img, string? b64)
+    {
+        if (await FromBase64Async(b64) is { } t) img.Source = t;
+    }
+
+    private UIElement Bubble(WaMessage m, bool group)
+    {
+        var s = new StackPanel { Spacing = 4 };
+        if (group && !m.FromMe && !string.IsNullOrEmpty(m.Sender)) s.Children.Add(Ui.Label(m.Sender, 11, Ui.Parse(NameColor(m.Sender)), bold: true));
+        if (m.File is { } file) s.Children.Add(MediaView(file));
+        var body = m.File is null ? m.Text : m.Caption;
+        if (!string.IsNullOrEmpty(body))
+        {
+            var text = new TextBlock { Text = body, TextWrapping = TextWrapping.Wrap, FontSize = 13, IsTextSelectionEnabled = true, Foreground = Ui.Brush(Ui.Text), MaxWidth = 240 };
+            s.Children.Add(text);
+        }
+        var sticker = m.File?.Kind == "sticker";
         var time = Ui.Label(m.Ts.ToLocalTime().ToString("HH:mm"), 10.5, Ui.Tertiary);
         time.HorizontalAlignment = HorizontalAlignment.Right;
         s.Children.Add(time);
@@ -400,9 +638,9 @@ public sealed class WhatsAppPanel : Grid
         {
             Child = s,
             MaxWidth = 270,
-            Padding = new Thickness(11, 7, 11, 6),
+            Padding = sticker ? new Thickness(2) : m.File is { Kind: "image" or "video" } ? new Thickness(4, 4, 4, 5) : new Thickness(11, 7, 11, 6),
             CornerRadius = m.FromMe ? new CornerRadius(14, 14, 4, 14) : new CornerRadius(14, 14, 14, 4),
-            Background = Ui.Brush(m.FromMe ? Ui.Parse("#1F6B45") : ColorHelper.FromArgb(0x1F, 0xFF, 0xFF, 0xFF)),
+            Background = Ui.Brush(sticker ? Colors.Transparent : m.FromMe ? Ui.Parse("#1F6B45") : ColorHelper.FromArgb(0x1F, 0xFF, 0xFF, 0xFF)),
             HorizontalAlignment = m.FromMe ? HorizontalAlignment.Right : HorizontalAlignment.Left,
         };
     }

@@ -198,6 +198,14 @@ public sealed class WhatsAppBridge(DispatcherQueue ui) : IAsyncDisposable
 
     public async Task<string> DownloadAsync(WaFile f) => (await CallAsync("media.download", new { jid = f.Jid, messageId = f.MessageId }, 300000)).GetProperty("path").GetString()!;
 
+    public async Task<string?> AvatarAsync(string jid)
+    {
+        var r = await CallAsync("avatar.get", new { jid }, 15000);
+        return r.TryGetProperty("path", out var p) && p.ValueKind == JsonValueKind.String ? p.GetString() : null;
+    }
+
+    public async Task<string> MediaPathAsync(WaFile f) => (await CallAsync("media.cache", new { jid = f.Jid, messageId = f.MessageId }, 300000)).GetProperty("path").GetString()!;
+
     public Task MarkReadAsync(string jid) => CallAsync("chats.read", new { jid });
 
     public Task LogoutAsync() => CallAsync("logout");
