@@ -186,6 +186,9 @@ public sealed class WhatsAppBridge(DispatcherQueue ui) : IAsyncDisposable
     public async Task<IReadOnlyList<WaMessage>> MessagesAsync(string jid, int limit = 20)
         => WaJson.List(await CallAsync("messages.list", new { jid, limit }), e => WaJson.Message(e, jid));
 
+    public async Task<IReadOnlyList<WaFeedItem>> RecentMessagesAsync(int limit = 30)
+        => WaJson.List(await CallAsync("messages.recent", new { limit }), WaJson.Feed);
+
     public async Task<IReadOnlyList<WaFile>> RecentFilesAsync(int limit = 8)
         => WaJson.List(await CallAsync("files.recent", new { limit }), e => WaJson.File(e));
 

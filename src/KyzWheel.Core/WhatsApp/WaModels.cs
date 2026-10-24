@@ -25,6 +25,8 @@ public sealed record WaMessage(string Id, bool FromMe, string Text, DateTimeOffs
 
 public sealed record WaContact(string Jid, string Name);
 
+public sealed record WaFeedItem(string Jid, string ChatName, bool IsGroup, WaMessage Message);
+
 public sealed record WaStatus(string State, string? MeJid, string? MeName, int Unread);
 
 public static class WaJson
@@ -61,6 +63,12 @@ public static class WaJson
         var id = S(e, "id");
         WaFile? file = e.TryGetProperty("file", out var f) && f.ValueKind == JsonValueKind.Object ? File(f, jid, id) : null;
         return new WaMessage(id, B(e, "fromMe"), S(e, "text"), Ts(e, "ts"), file, e.TryGetProperty("sender", out var s) && s.ValueKind == JsonValueKind.String ? s.GetString() : null) { Caption = S(e, "caption") };
+    }
+
+    public static WaFeedItem Feed(JsonElement e)
+    {
+        var jid = S(e, "jid");
+        return new WaFeedItem(jid, S(e, "chatName", jid), B(e, "isGroup"), Message(e, jid));
     }
 
     public static WaStatus Status(JsonElement e)

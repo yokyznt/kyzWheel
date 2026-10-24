@@ -27,7 +27,7 @@ public sealed class ConfigStore(string path)
         {
         }
         if (cfg is not null && cfg.Slots is not null && Validate(cfg).Count == 0) return cfg;
-        File.WriteAllText(FilePath + ".bak", raw);
+        File.WriteAllText($"{FilePath}.{DateTime.Now:yyyyMMdd-HHmmss}.bak", raw);
         Save(AppConfig.Default);
         return AppConfig.Default;
     }

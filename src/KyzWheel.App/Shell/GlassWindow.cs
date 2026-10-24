@@ -72,6 +72,11 @@ public class GlassWindow : Window
             _animatedIn = true;
             Surface.Loaded += (_, _) => KyzWheel.App.Wheel.WheelAnimations.WindowIn(Surface);
         }
+        if (KyzWheel.App.Wheel.WheelWindow.Passive)
+        {
+            AppWindow.Show(false);
+            return;
+        }
         AppWindow.Show(true);
         Activate();
         Foreground.Force(this.GetWindowHandle());

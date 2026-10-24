@@ -14,7 +14,7 @@ public sealed class ConfigStoreTests : IDisposable
     {
         var c = AppConfig.Default;
         Assert.Equal("Ctrl+Alt+Space", c.GlobalHotkey);
-        Assert.Equal(new[] { SlotType.WhatsApp, SlotType.Mail, SlotType.Converter, SlotType.Clipboard, SlotType.Phone }, c.Slots.Select(s => s.Type));
+        Assert.Equal(new[] { SlotType.Messages, SlotType.Converter, SlotType.Clipboard, SlotType.Phone }, c.Slots.Select(s => s.Type));
         Assert.True(c.StartWithWindows);
     }
 
@@ -22,7 +22,7 @@ public sealed class ConfigStoreTests : IDisposable
     public void Missing_file_returns_default_and_writes_it()
     {
         var c = new ConfigStore(PathOf).Load();
-        Assert.Equal(5, c.Slots.Count);
+        Assert.Equal(4, c.Slots.Count);
         Assert.True(File.Exists(PathOf));
     }
 
@@ -36,7 +36,7 @@ public sealed class ConfigStoreTests : IDisposable
         Assert.Equal("Alt+Q", back.GlobalHotkey);
         Assert.Equal("#FF00AA", back.AccentHex);
         Assert.Equal(c.Slots, back.Slots);
-        Assert.Contains("\"WhatsApp\"", File.ReadAllText(PathOf));
+        Assert.Contains("\"Messages\"", File.ReadAllText(PathOf));
     }
 
     [Fact]
@@ -45,7 +45,9 @@ public sealed class ConfigStoreTests : IDisposable
         File.WriteAllText(PathOf, "{ not json");
         var c = new ConfigStore(PathOf).Load();
         Assert.Equal("Ctrl+Alt+Space", c.GlobalHotkey);
-        Assert.Equal("{ not json", File.ReadAllText(PathOf + ".bak"));
+        var backups = Directory.GetFiles(Path.GetDirectoryName(PathOf)!, Path.GetFileName(PathOf) + ".*.bak");
+        Assert.Single(backups);
+        Assert.Equal("{ not json", File.ReadAllText(backups[0]));
     }
 
     [Fact]
@@ -53,7 +55,7 @@ public sealed class ConfigStoreTests : IDisposable
     {
         var store = new ConfigStore(PathOf);
         File.WriteAllText(PathOf, "{\"Version\":1,\"GlobalHotkey\":\"Alt+Q\",\"Slots\":[],\"AccentHex\":\"#FF8A3D\",\"StartWithWindows\":true}");
-        Assert.Equal(5, store.Load().Slots.Count);
+        Assert.Equal(4, store.Load().Slots.Count);
     }
 
     [Fact]

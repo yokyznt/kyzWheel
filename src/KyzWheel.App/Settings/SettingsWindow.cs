@@ -42,7 +42,7 @@ public sealed class SettingsWindow : GlassWindow
     private static readonly (SlotType Type, string Name)[] Types =
     [
         (SlotType.WhatsApp, "WhatsApp"), (SlotType.Mail, "Correo"), (SlotType.Converter, "Convertidor"),
-        (SlotType.LaunchApp, "Abrir app"), (SlotType.OpenUrl, "Abrir URL"), (SlotType.SendToFolder, "Enviar a carpeta"), (SlotType.Clipboard, "Portapapeles"), (SlotType.Phone, "Celular"),
+        (SlotType.LaunchApp, "Abrir app"), (SlotType.OpenUrl, "Abrir URL"), (SlotType.SendToFolder, "Enviar a carpeta"), (SlotType.Clipboard, "Portapapeles"), (SlotType.Phone, "Celular"), (SlotType.Messages, "Mensajes"),
     ];
 
     private readonly Func<AppConfig, IReadOnlyList<string>> _apply;
@@ -314,7 +314,7 @@ public sealed class SettingsWindow : GlassWindow
             SlotType.OpenUrl => "https://…",
             _ => @"C:\ruta\carpeta",
         };
-        _notify.Visibility = t is SlotType.WhatsApp or SlotType.Mail ? Visibility.Visible : Visibility.Collapsed;
+        _notify.Visibility = t is SlotType.WhatsApp or SlotType.Mail or SlotType.Messages ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private void Edit(Action<Draft> change, bool refresh = false)
@@ -342,6 +342,7 @@ public sealed class SettingsWindow : GlassWindow
             SlotType.LaunchApp => "\uE7AC",
             SlotType.Clipboard => "\uE77F",
             SlotType.Phone => "\uE8EA",
+            SlotType.Messages => "\uE8F2",
             SlotType.OpenUrl => "\uE774",
             _ => "\uE8B7",
         };
@@ -393,7 +394,7 @@ public sealed class SettingsWindow : GlassWindow
             return;
         }
         var cfg = new AppConfig(1, _global.Value ?? "Ctrl+Alt+Space", _slots.Select(s => s.ToSlot()).ToList(),
-            KyzWheel.Core.Theming.Themes.Find(_themeId).Accent, _autostart.IsOn) { MailAccounts = _accounts.ToList(), ThemeId = _themeId, GoogleClientId = _base.GoogleClientId, GoogleClientSecret = _base.GoogleClientSecret, PhoneSlotOffered = _base.PhoneSlotOffered };
+            KyzWheel.Core.Theming.Themes.Find(_themeId).Accent, _autostart.IsOn) { MailAccounts = _accounts.ToList(), ThemeId = _themeId, GoogleClientId = _base.GoogleClientId, GoogleClientSecret = _base.GoogleClientSecret, PhoneSlotOffered = _base.PhoneSlotOffered, MessagesMerged = _base.MessagesMerged };
         var errors = ConfigStore.Validate(cfg);
         if (errors.Count == 0) errors = _apply(cfg);
         _status.Text = errors.Count == 0 ? "Guardado" : string.Join(" · ", errors);

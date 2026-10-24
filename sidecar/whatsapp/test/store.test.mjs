@@ -138,3 +138,16 @@ test('stickers, voice notes and locations are shown; reactions skipped', () => {
   assert.equal(list[1].file.seconds, 7)
   assert.equal(list[2].text, '📍 Ubicación')
 })
+
+test('recent messages across chats newest first with chat names', () => {
+  const s = createStore(null)
+  s.upsertContacts([{ id: 'a@s.whatsapp.net', name: 'Ana' }])
+  s.setGroupNames({ 'g@g.us': { subject: 'Equipo' } })
+  s.upsertMessages([msg('a@s.whatsapp.net', '1', 10, { conversation: 'viejo' }), msg('g@g.us', '2', 30, { conversation: 'nuevo' }), msg('a@s.whatsapp.net', '3', 20, { imageMessage: { mediaKey: Buffer.from([1]), directPath: '/x' } })])
+  const r = s.recentMessages(2)
+  assert.deepEqual(r.map((m) => m.id), ['2', '3'])
+  assert.equal(r[0].chatName, 'Equipo')
+  assert.equal(r[0].isGroup, true)
+  assert.equal(r[1].chatName, 'Ana')
+  assert.equal(r[1].file.media, undefined)
+})

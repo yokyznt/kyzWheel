@@ -36,6 +36,7 @@ public sealed class SidePanelWindow : GlassWindow
         Activated += (_, e) =>
         {
             if (e.WindowActivationState == WindowActivationState.Deactivated && _shown && Environment.TickCount64 - _shownAt > 400 && !Pinned) HidePanel();
+            if (e.WindowActivationState == WindowActivationState.Deactivated && _shown) LostFocus?.Invoke();
         };
         AppWindow.Closing += (_, e) =>
         {
@@ -46,7 +47,9 @@ public sealed class SidePanelWindow : GlassWindow
 
     public bool Pinned { get; set; }
 
-    public void Show(string glyph, string colorHex, string title, string? subtitle, UIElement content, IReadOnlyList<Button> actions, int anchorX, int anchorY)
+    public event Action? LostFocus;
+
+    public void Show(string glyph, string colorHex, string title, string? subtitle, UIElement content, IReadOnlyList<Button> actions, int anchorX, int anchorY, int dock = 0)
     {
         _header.Children.Clear();
         var chip = new Grid { Width = 34, Height = 34 };
@@ -67,6 +70,12 @@ public sealed class SidePanelWindow : GlassWindow
         var wa = KyzWheel.Platform.Native.User32.WorkAreaAt(anchorX, anchorY);
         var size = AppWindow.Size;
         var x = Math.Clamp(anchorX - size.Width / 2, wa.X + 8, wa.X + wa.W - size.Width - 8);
+        if (dock > 0)
+        {
+            var right = anchorX + dock + 14;
+            var left = anchorX - dock - 14 - size.Width;
+            x = right + size.Width <= wa.X + wa.W - 8 ? right : Math.Max(wa.X + 8, left);
+        }
         var y = Math.Clamp(anchorY - size.Height / 2, wa.Y + 8, wa.Y + wa.H - size.Height - 8);
         AppWindow.Move(new Windows.Graphics.PointInt32(x, y));
         _shown = true;

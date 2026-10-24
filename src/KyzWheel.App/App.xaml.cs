@@ -77,6 +77,11 @@ public partial class App : Application
         }
         _ui = DispatcherQueue.GetForCurrentThread();
         _config = _store.Load();
+        if (!_config.MessagesMerged)
+        {
+            _config = _config with { Slots = SlotMigrations.MergeMessages(_config.Slots).ToList(), MessagesMerged = true };
+            _store.Save(_config);
+        }
         if (!_config.PhoneSlotOffered)
         {
             var slots = _config.Slots.ToList();
@@ -97,7 +102,7 @@ public partial class App : Application
         _wa.ChatsChanged += () => _ = RefreshWaUnreadAsync();
         _wa.MessageArrived += (chat, msg) =>
         {
-            if (_config.Slots.Any(s => s.Type == SlotType.WhatsApp && s.Notify)) _toasts.Info(chat.Name, msg.Text);
+            if (_config.Slots.Any(s => s.Type is SlotType.WhatsApp or SlotType.Messages && s.Notify)) _toasts.Info(chat.Name, msg.Text);
         };
         _converter = new ConverterController(new ConversionCatalog([.. ImageConversions.All(), .. KyzWheel.Convert.Media.MediaConversions.All(), .. KyzWheel.Convert.Documents.PdfConversions.All()]), _toasts);
         _toasts.Init();
@@ -144,6 +149,18 @@ public partial class App : Application
         {
             var p = at.Split(',');
             _wheel.ShowRoot(int.Parse(p[0]), int.Parse(p[1]), RootPage(), Stopwatch.StartNew());
+        }
+        if (Environment.GetCommandLineArgs().SkipWhile(a => a != "--feed").Skip(1).FirstOrDefault() is { } feed)
+        {
+            var ft = _ui.CreateTimer();
+            ft.Interval = TimeSpan.FromMilliseconds(9000);
+            ft.IsRepeating = false;
+            ft.Tick += (_, _) =>
+            {
+                if (feed == "wa") _ = ShowWaFeedAsync();
+                else ShowMailFeed();
+            };
+            ft.Start();
         }
         if (Environment.GetCommandLineArgs().SkipWhile(a => a != "--open").Skip(1).FirstOrDefault() is { } open
             && Enum.TryParse<SlotType>(open, true, out var type)
@@ -207,7 +224,7 @@ public partial class App : Application
         _store.Save(cfg);
         Theme.Apply(cfg.ThemeId);
         _mail.Sync(cfg.MailAccounts ?? []);
-        if (cfg.Slots.Any(s => s.Type == SlotType.WhatsApp)) _wa.Start();
+        if (cfg.Slots.Any(s => s.Type is SlotType.WhatsApp or SlotType.Messages)) _wa.Start();
         else _ = _wa.DisposeAsync().AsTask();
         UpdateBadges();
         UpdateAutostart(cfg.StartWithWindows);
@@ -236,6 +253,7 @@ public partial class App : Application
     {
         SlotType.Mail => _mail.Inbox.UnreadCount,
         SlotType.WhatsApp => _wa.Status.Unread,
+        SlotType.Messages => _wa.Status.Unread + _mail.Inbox.UnreadCount,
         _ => 0,
     };
 
@@ -249,7 +267,7 @@ public partial class App : Application
     {
         var (x, y) = WheelCenter();
         _wheel.HideAnimated();
-        _panel ??= new SidePanelWindow();
+        _panel ??= CreatePanel();
         if (!_wa.Running && _wa.Status.State != "missing") _wa.Start();
         var sub = _wa.Status.State == "open" ? (_wa.Status.MeName is { Length: > 0 } n ? n : "Conectado") : "Sin vincular";
         var logout = Ui.IconButton("\uE8BD", "Desvincular WhatsApp", async () =>
@@ -264,13 +282,16 @@ public partial class App : Application
         var unread = _mail.Inbox.UnreadCount;
         foreach (var s in _config.Slots.Where(s => s.Type == SlotType.Mail)) _wheel.SetBadge("slot:" + s.Id, unread);
         foreach (var s in _config.Slots.Where(s => s.Type == SlotType.WhatsApp)) _wheel.SetBadge("slot:" + s.Id, _wa.Status.Unread);
+        foreach (var s in _config.Slots.Where(s => s.Type == SlotType.Messages)) _wheel.SetBadge("slot:" + s.Id, _wa.Status.Unread + _mail.Inbox.UnreadCount);
+        _wheel.SetBadge("msg:wa", _wa.Status.Unread);
+        _wheel.SetBadge("msg:mail", _mail.Inbox.UnreadCount);
         unread += _wa.Status.Unread;
         _tray?.SetTooltip(unread > 0 ? $"kyzWheel · {unread} sin leer" : "kyzWheel");
     }
 
     private void OnMailArrived(MailSummary m)
     {
-        if (_config.Slots.Any(s => s.Type == SlotType.Mail && s.Notify) && m.Unread)
+        if (_config.Slots.Any(s => s.Type is SlotType.Mail or SlotType.Messages && s.Notify) && m.Unread)
             _toasts.Info(m.FromName, $"{m.Subject}\n{m.Preview}");
     }
 
@@ -278,7 +299,7 @@ public partial class App : Application
     {
         var (x, y) = WheelCenter();
         _wheel.HideAnimated();
-        _panel ??= new SidePanelWindow();
+        _panel ??= CreatePanel();
         var compose = Ui.IconButton("\uE70F", "Redactar", () => OpenCompose([], null));
         var refresh = Ui.IconButton("\uE72C", "Actualizar", () => { foreach (var a in _mail.Accounts) _mail.Restart(a.Email); });
         var settings = Ui.IconButton("\uE713", "Cuentas", OpenSettings);
@@ -295,7 +316,7 @@ public partial class App : Application
     {
         var (x, y) = WheelCenter();
         _wheel.HideAnimated();
-        _panel ??= new SidePanelWindow();
+        _panel ??= CreatePanel();
         var clear = Ui.IconButton("\uE894", "Borrar todo (menos fijados)", () => _clips.History.ClearUnpinned());
         _panel.Show(s.Glyph, s.ColorHex, s.Name, $"{_clips.History.Items.Count} elementos", new ClipboardPanel(_clips, PasteClip), [clear], x, y);
     }
@@ -450,7 +471,12 @@ public partial class App : Application
                 .ToList();
             pages.Add(new WheelPage(ConverterController.PageTitle(page), items, page));
         }
-        var targets = _config.Slots.Where(s => s.Type is SlotType.WhatsApp or SlotType.Mail or SlotType.SendToFolder or SlotType.LaunchApp).Select(SlotItem).ToList();
+        var targets = _config.Slots.Where(s => s.Type is SlotType.WhatsApp or SlotType.Mail or SlotType.SendToFolder or SlotType.LaunchApp or SlotType.Phone).Select(SlotItem).ToList();
+        if (_config.Slots.Any(s => s.Type == SlotType.Messages))
+        {
+            targets.Insert(0, SlotItem(WaSlot));
+            targets.Insert(1, SlotItem(MailSlot));
+        }
         if (targets.Count > 0) pages.Add(new WheelPage("Enviar a", targets, "slots"));
         return pages;
     }
@@ -544,6 +570,20 @@ public partial class App : Application
 
     private WheelPage? ExpandItem(WheelItem item, WheelMode mode)
     {
+        if (item.Tag is "phone:clip")
+        {
+            var clips = _clips.History.Items;
+            if (clips.Count == 0) return null;
+            var phoneColor = FirstSlot(SlotType.Phone)?.ColorHex ?? "#60A5FA";
+            var list = new List<WheelItem> { new("phone:clipnow", "Lo copiado ahora", "\uE77F", phoneColor, 0, "phone:clipnow") };
+            list.AddRange(clips.Select(c => new WheelItem("pclip:" + c.Id, Short(c.Preview), c.Kind switch
+            {
+                KyzWheel.Core.Clipboard.ClipKind.Image => "\uEB9F",
+                KyzWheel.Core.Clipboard.ClipKind.Files => "\uE8B7",
+                _ => "\uE8C8",
+            }, phoneColor, 0, new PhoneClip(c))));
+            return new WheelPage("Al celular", list);
+        }
         if (item.Tag is RecentFile rf)
         {
             _wheel.AttachFiles([rf.Path]);
@@ -568,6 +608,16 @@ public partial class App : Application
                 var items = new List<WheelItem> { new("mail:compose", "Redactar", "\uE70F", s.ColorHex, 0, "compose") };
                 items.AddRange(mails.Select(m => new WheelItem("mail:" + m.MessageId, Short(m.FromName.Length > 0 ? m.FromName : m.FromAddress), m.HasAttachments ? "\uE723" : "\uE715", s.ColorHex, m.Unread ? 1 : 0, m)));
                 return new WheelPage(s.Name, items, s);
+            case SlotType.Messages when mode == WheelMode.Root:
+                return new WheelPage(s.Name,
+                [
+                    new("msg:wa", "WhatsApp", "\uE8BD", "#25D366", _wa.Status.Unread, "msg:wa"),
+                    new("msg:mail", "Gmail", "\uE715", "#EA4335", _mail.Inbox.UnreadCount, "msg:mail"),
+                    new("slot:" + WaSlot.Id, "Chats", "\uE8F2", "#25D366", 0, WaSlot),
+                    new("msg:compose", "Redactar", "\uE70F", "#EA4335", 0, "msg:compose"),
+                ], s);
+            case SlotType.Messages:
+                return new WheelPage(s.Name, [SlotItem(WaSlot), SlotItem(MailSlot)], s);
             case SlotType.Phone when mode == WheelMode.Root && _phone.Installed:
                 return new WheelPage(s.Name,
                 [
@@ -602,7 +652,7 @@ public partial class App : Application
         var mode = _wheel.Mode;
         var (x, y) = WheelCenter();
         _wheel.HideAnimated();
-        _panel ??= new SidePanelWindow();
+        _panel ??= CreatePanel();
         var title = parent?.Label ?? "Más opciones";
         _panel.Show(parent?.Glyph ?? "\uE712", parent?.ColorHex ?? "#FFFFFF", title, $"{rest.Count} opciones", new ItemListPanel(rest, it =>
         {
@@ -613,6 +663,131 @@ public partial class App : Application
     }
 
     private Slot? FirstSlot(SlotType t) => _config.Slots.FirstOrDefault(x => x.Type == t);
+
+    private Slot WaSlot => FirstSlot(SlotType.WhatsApp) ?? new Slot("whatsapp", "WhatsApp", "\uE8BD", "#25D366", SlotType.WhatsApp, null, null, true);
+
+    private Slot MailSlot => FirstSlot(SlotType.Mail) ?? new Slot("mail", "Gmail", "\uE715", "#EA4335", SlotType.Mail, null, null, true);
+
+    private sealed record PhoneClip(KyzWheel.Core.Clipboard.ClipItem Item);
+
+    private void SendClipToPhone(KyzWheel.Core.Clipboard.ClipItem c)
+    {
+        switch (c.Kind)
+        {
+            case KyzWheel.Core.Clipboard.ClipKind.Text:
+                _ = PhoneAsync("Texto en el portapapeles del celular", () => _phone.SendTextAsync(c.Text!));
+                break;
+            case KyzWheel.Core.Clipboard.ClipKind.Image when c.ImagePath is { } img && File.Exists(img):
+                _ = PhoneAsync("Imagen enviada a Descargas", () => _phone.SendFilesAsync([img]));
+                break;
+            case KyzWheel.Core.Clipboard.ClipKind.Files:
+                var files = c.Files!.Where(File.Exists).ToList();
+                if (files.Count > 0) _ = PhoneAsync(files.Count == 1 ? "Archivo enviado" : $"{files.Count} archivos enviados", () => _phone.SendFilesAsync(files));
+                break;
+        }
+    }
+
+    private bool _dockedPanel;
+
+    private void DockPanel(string glyph, string color, string title, string sub, UIElement content, IReadOnlyList<Microsoft.UI.Xaml.Controls.Button> actions)
+    {
+        var (x, y) = WheelCenter();
+        _panel ??= CreatePanel();
+        _wheel.ReleaseCursor();
+        _wheel.Docked = true;
+        _panel.Pinned = true;
+        _dockedPanel = true;
+        _panel.Show(glyph, color, title, sub, content, actions, x, y, _wheel.RadiusPx);
+    }
+
+    private SidePanelWindow CreatePanel()
+    {
+        var p = new SidePanelWindow();
+        p.PanelHidden += () =>
+        {
+            if (!_dockedPanel) return;
+            _dockedPanel = false;
+            p.Pinned = false;
+            if (_wheel.IsShown) _wheel.HideAnimated();
+        };
+        p.LostFocus += CheckDockFocus;
+        return p;
+    }
+
+    private void CheckDockFocus()
+    {
+        if (!_dockedPanel) return;
+        var t = _ui.CreateTimer();
+        t.Interval = TimeSpan.FromMilliseconds(160);
+        t.IsRepeating = false;
+        t.Tick += (_, _) =>
+        {
+            var fg = KyzWheel.Platform.Shell.ShellSelection.Foreground();
+            var panel = _panel is null ? 0 : WinRT.Interop.WindowNative.GetWindowHandle(_panel);
+            if (fg == _wheel.GetWindowHandleSafe() || fg == panel || !_dockedPanel) return;
+            _panel?.HidePanel();
+        };
+        t.Start();
+    }
+
+    private async Task ShowWaFeedAsync()
+    {
+        if (_wa.Status.State != "open")
+        {
+            ShowWhatsAppPanel(WaSlot, []);
+            return;
+        }
+        IReadOnlyList<KyzWheel.Core.WhatsApp.WaFeedItem> items;
+        try
+        {
+            items = await _wa.RecentMessagesAsync(30);
+        }
+        catch (Exception e) when (e is WaException or TimeoutException or InvalidOperationException)
+        {
+            items = [];
+        }
+        var chats = _waChats.ToDictionary(c => c.Jid);
+        var entries = items.Select(i => new KyzWheel.App.Messages.FeedEntry(
+            i.Message.FromMe ? "Tú" : i.IsGroup && !string.IsNullOrEmpty(i.Message.Sender) ? i.Message.Sender! : i.ChatName,
+            i.IsGroup ? i.ChatName : i.Message.FromMe ? "a " + i.ChatName : null,
+            i.Message.Text,
+            i.Message.Ts,
+            "#25D366",
+            !i.Message.FromMe && chats.TryGetValue(i.Jid, out var c) && c.Unread > 0,
+            i.Jid,
+            i.Message.File?.Thumb,
+            () =>
+            {
+                _panel?.HidePanel();
+                ShowWhatsAppPanel(WaSlot, [], chats.TryGetValue(i.Jid, out var ch) ? ch : new KyzWheel.Core.WhatsApp.WaChat(i.Jid, i.ChatName, "", i.Message.Ts, 0, i.IsGroup));
+            })).ToList();
+        DockPanel("\uE8BD", "#25D366", "WhatsApp", "Mensajes recientes", new KyzWheel.App.Messages.MessageFeedPanel(entries, _toasts, "Cuando lleguen mensajes aparecen aquí.", e => e.AvatarPath is { } jid ? _wa.AvatarAsync(jid) : Task.FromResult<string?>(null)), []);
+    }
+
+    private void ShowMailFeed()
+    {
+        if (_mail.Accounts.Count == 0)
+        {
+            ShowMailPanel(MailSlot);
+            return;
+        }
+        var entries = _mail.Inbox.Top(30).Select(m => new KyzWheel.App.Messages.FeedEntry(
+            m.FromName.Length > 0 ? m.FromName : m.FromAddress,
+            m.Subject,
+            m.Preview,
+            m.Date,
+            _mail.AccountOf(m.Account)?.ColorHex ?? "#EA4335",
+            m.Unread,
+            null,
+            null,
+            () =>
+            {
+                _panel?.HidePanel();
+                OpenMail(m);
+            })).ToList();
+        var compose = Ui.IconButton("\uE70F", "Redactar", () => OpenCompose([], null));
+        DockPanel("\uE715", "#EA4335", "Gmail", $"{_mail.Inbox.UnreadCount} sin leer", new KyzWheel.App.Messages.MessageFeedPanel(entries, _toasts, "No hay correos recientes."), [compose]);
+    }
 
     private void OnItemInvoked(WheelItem item)
     {
@@ -633,6 +808,7 @@ public partial class App : Application
                 PickFileForConverter();
                 break;
             case "phone:clip":
+            case "phone:clipnow":
                 _wheel.HideAnimated();
                 _ = PhoneAsync("Portapapeles enviado", () => _phone.SendClipboardAsync());
                 break;
@@ -661,8 +837,22 @@ public partial class App : Application
                 _wheel.HideAnimated();
                 OpenCompose([], null);
                 break;
-            case KyzWheel.Core.WhatsApp.WaChat chat when FirstSlot(SlotType.WhatsApp) is { } ws:
-                ShowWhatsAppPanel(ws, [], chat);
+            case KyzWheel.Core.WhatsApp.WaChat chat:
+                ShowWhatsAppPanel(WaSlot, [], chat);
+                break;
+            case "msg:wa":
+                _ = ShowWaFeedAsync();
+                break;
+            case "msg:mail":
+                ShowMailFeed();
+                break;
+            case "msg:compose":
+                _wheel.HideAnimated();
+                OpenCompose([], null);
+                break;
+            case PhoneClip pc:
+                _wheel.HideAnimated();
+                SendClipToPhone(pc.Item);
                 break;
         }
     }
@@ -756,7 +946,7 @@ public partial class App : Application
     {
         var (x, y) = WheelCenter();
         _wheel.HideAnimated();
-        _panel ??= new SidePanelWindow();
+        _panel ??= CreatePanel();
         var body = new Microsoft.UI.Xaml.Controls.StackPanel { Spacing = 12 };
         body.Children.Add(Ui.Label(_phone.Installed ? "Vincula tu celular" : "Falta KDE Connect", 16, bold: true));
         body.Children.Add(Ui.Label(_phone.Installed
@@ -774,7 +964,7 @@ public partial class App : Application
     {
         var (x, y) = WheelCenter();
         _wheel.HideAnimated();
-        _panel ??= new SidePanelWindow();
+        _panel ??= CreatePanel();
         _panel.Show(s.Glyph, s.ColorHex, s.Name, "Próximamente", MailPanel.Empty(s.Glyph, "En camino", text, null, null), [], x, y);
     }
 
