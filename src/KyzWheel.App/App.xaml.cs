@@ -93,10 +93,12 @@ public partial class App : Application
         Theme.Apply(_config.ThemeId);
         _mail = new MailService(new CredentialManagerStore(), _ui);
         _mail.Changed += UpdateBadges;
+        _mail.Changed += () => QueueFeedRefresh("mail");
         _mail.Arrived += OnMailArrived;
         _clips.Start();
         _wa = new WhatsAppBridge(_ui);
         _wa.ChatsChanged += () => _ = RefreshWaCacheAsync();
+        _wa.ChatsChanged += () => QueueFeedRefresh("wa");
         _wa.StatusChanged += () => { if (_wa.Status.State == "open") _ = RefreshWaCacheAsync(); };
         _wa.StatusChanged += UpdateBadges;
         _wa.ChatsChanged += () => _ = RefreshWaUnreadAsync();
@@ -342,7 +344,7 @@ public partial class App : Application
 
     private void OpenMail(MailSummary m)
     {
-        _panel?.HidePanel();
+        if (!_dockedPanel) _panel?.HidePanel();
         var w = new MailReaderWindow(_mail, m, r => OpenCompose([], r));
         w.CenterOnCursorMonitor();
         w.BringToFront();
@@ -705,6 +707,8 @@ public partial class App : Application
         {
             if (!_dockedPanel) return;
             _dockedPanel = false;
+            _feed = null;
+            _feedKind = null;
             p.Pinned = false;
             if (_wheel.IsShown) _wheel.HideAnimated();
         };
@@ -721,11 +725,72 @@ public partial class App : Application
         t.Tick += (_, _) =>
         {
             var fg = KyzWheel.Platform.Shell.ShellSelection.Foreground();
-            var panel = _panel is null ? 0 : WinRT.Interop.WindowNative.GetWindowHandle(_panel);
-            if (fg == _wheel.GetWindowHandleSafe() || fg == panel || !_dockedPanel) return;
+            if (!_dockedPanel || KyzWheel.Platform.Native.User32.ProcessOf(fg) == Environment.ProcessId) return;
             _panel?.HidePanel();
         };
         t.Start();
+    }
+
+    private KyzWheel.App.Messages.MessageFeedPanel? _feed;
+    private string? _feedKind;
+    private bool _feedRefreshQueued;
+
+    private void QueueFeedRefresh(string kind)
+    {
+        if (!_dockedPanel || _feed is null || _feedKind != kind || _feedRefreshQueued) return;
+        _feedRefreshQueued = true;
+        var t = _ui.CreateTimer();
+        t.Interval = TimeSpan.FromMilliseconds(250);
+        t.IsRepeating = false;
+        t.Tick += async (_, _) =>
+        {
+            _feedRefreshQueued = false;
+            if (!_dockedPanel || _feed is null || _feedKind != kind) return;
+            _feed.Update(kind == "wa" ? await WaEntriesAsync() : MailEntries());
+        };
+        t.Start();
+    }
+
+    private async Task<IReadOnlyList<KyzWheel.App.Messages.FeedEntry>> WaEntriesAsync()
+    {
+        IReadOnlyList<KyzWheel.Core.WhatsApp.WaFeedItem> items;
+        try
+        {
+            items = await _wa.RecentMessagesAsync(40);
+        }
+        catch (Exception e) when (e is WaException or TimeoutException or InvalidOperationException)
+        {
+            return [];
+        }
+        var chats = _waChats.ToDictionary(c => c.Jid);
+        return items.Select(i => new KyzWheel.App.Messages.FeedEntry(
+            i.Jid + "|" + i.Message.Id,
+            i.Message.FromMe ? "Tú" : i.IsGroup && !string.IsNullOrEmpty(i.Message.Sender) ? i.Message.Sender! : i.ChatName,
+            i.IsGroup ? i.ChatName : i.Message.FromMe ? "a " + i.ChatName : null,
+            i.Message.Text,
+            i.Message.Ts,
+            "#25D366",
+            !i.Message.FromMe && chats.TryGetValue(i.Jid, out var c) && c.Unread > 0,
+            i.Jid,
+            i.Message.File?.Thumb,
+            () => ShowWhatsAppPanel(WaSlot, [], chats.TryGetValue(i.Jid, out var ch) ? ch : new KyzWheel.Core.WhatsApp.WaChat(i.Jid, i.ChatName, "", i.Message.Ts, 0, i.IsGroup)))).ToList();
+    }
+
+    private IReadOnlyList<KyzWheel.App.Messages.FeedEntry> MailEntries()
+    {
+        var multi = _mail.Accounts.Count > 1;
+        return _mail.Inbox.Top(40).DistinctBy(m => (m.Account, string.IsNullOrEmpty(m.MessageId) ? m.Uid.ToString() : m.MessageId)).Select(m => new KyzWheel.App.Messages.FeedEntry(
+            m.Account + "|" + m.Uid,
+            m.FromName.Length > 0 ? m.FromName : m.FromAddress,
+            m.Subject,
+            m.Preview,
+            m.Date,
+            _mail.AccountOf(m.Account)?.ColorHex ?? "#EA4335",
+            m.Unread,
+            null,
+            null,
+            () => OpenMail(m),
+            multi ? m.Account : null)).ToList();
     }
 
     private async Task ShowWaFeedAsync()
@@ -735,31 +800,10 @@ public partial class App : Application
             ShowWhatsAppPanel(WaSlot, []);
             return;
         }
-        IReadOnlyList<KyzWheel.Core.WhatsApp.WaFeedItem> items;
-        try
-        {
-            items = await _wa.RecentMessagesAsync(30);
-        }
-        catch (Exception e) when (e is WaException or TimeoutException or InvalidOperationException)
-        {
-            items = [];
-        }
-        var chats = _waChats.ToDictionary(c => c.Jid);
-        var entries = items.Select(i => new KyzWheel.App.Messages.FeedEntry(
-            i.Message.FromMe ? "Tú" : i.IsGroup && !string.IsNullOrEmpty(i.Message.Sender) ? i.Message.Sender! : i.ChatName,
-            i.IsGroup ? i.ChatName : i.Message.FromMe ? "a " + i.ChatName : null,
-            i.Message.Text,
-            i.Message.Ts,
-            "#25D366",
-            !i.Message.FromMe && chats.TryGetValue(i.Jid, out var c) && c.Unread > 0,
-            i.Jid,
-            i.Message.File?.Thumb,
-            () =>
-            {
-                _panel?.HidePanel();
-                ShowWhatsAppPanel(WaSlot, [], chats.TryGetValue(i.Jid, out var ch) ? ch : new KyzWheel.Core.WhatsApp.WaChat(i.Jid, i.ChatName, "", i.Message.Ts, 0, i.IsGroup));
-            })).ToList();
-        DockPanel("\uE8BD", "#25D366", "WhatsApp", "Mensajes recientes", new KyzWheel.App.Messages.MessageFeedPanel(entries, _toasts, "Cuando lleguen mensajes aparecen aquí.", e => e.AvatarPath is { } jid ? _wa.AvatarAsync(jid) : Task.FromResult<string?>(null)), []);
+        var entries = await WaEntriesAsync();
+        _feed = new KyzWheel.App.Messages.MessageFeedPanel(entries, _toasts, "Cuando lleguen mensajes aparecen aquí.", e => e.AvatarKey is { } jid ? _wa.AvatarAsync(jid) : Task.FromResult<string?>(null));
+        _feedKind = "wa";
+        DockPanel("\uE8BD", "#25D366", "WhatsApp", "En vivo · doble clic abre el chat", _feed, []);
     }
 
     private void ShowMailFeed()
@@ -769,22 +813,11 @@ public partial class App : Application
             ShowMailPanel(MailSlot);
             return;
         }
-        var entries = _mail.Inbox.Top(30).Select(m => new KyzWheel.App.Messages.FeedEntry(
-            m.FromName.Length > 0 ? m.FromName : m.FromAddress,
-            m.Subject,
-            m.Preview,
-            m.Date,
-            _mail.AccountOf(m.Account)?.ColorHex ?? "#EA4335",
-            m.Unread,
-            null,
-            null,
-            () =>
-            {
-                _panel?.HidePanel();
-                OpenMail(m);
-            })).ToList();
+        _feed = new KyzWheel.App.Messages.MessageFeedPanel(MailEntries(), _toasts, "No hay correos recientes.");
+        _feedKind = "mail";
         var compose = Ui.IconButton("\uE70F", "Redactar", () => OpenCompose([], null));
-        DockPanel("\uE715", "#EA4335", "Gmail", $"{_mail.Inbox.UnreadCount} sin leer", new KyzWheel.App.Messages.MessageFeedPanel(entries, _toasts, "No hay correos recientes."), [compose]);
+        var refresh = Ui.IconButton("\uE72C", "Actualizar", () => { foreach (var a in _mail.Accounts) _mail.Restart(a.Email); });
+        DockPanel("\uE715", "#EA4335", "Gmail", $"{_mail.Inbox.UnreadCount} sin leer · en vivo", _feed, [refresh, compose]);
     }
 
     private void OnItemInvoked(WheelItem item)
