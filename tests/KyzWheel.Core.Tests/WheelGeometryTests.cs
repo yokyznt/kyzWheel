@@ -21,6 +21,11 @@ public sealed class WheelGeometryTests
     public void Clamp_on_monitor_above_with_negative_coords()
         => Assert.Equal((200d, -880d), WheelGeometry.ClampToWorkArea(50, -1075, 200, new Rect(0, -1080, 1920, 1040)));
 
+    [Fact] public void Locked_dead_zone_returns_minus_one() => Assert.Equal(-1, WheelGeometry.SliceAtAngle(5, -5, 4, 40));
+    [Fact] public void Locked_far_outside_still_picks_by_direction() => Assert.Equal(1, WheelGeometry.SliceAtAngle(900, 0, 4, 40));
+    [Fact] public void Locked_corner_of_square_picks_slice() => Assert.Equal(1, WheelGeometry.SliceAtAngle(150, 150, 3, 40));
+    [Fact] public void Lock_rect_is_square_around_center() => Assert.Equal((800, 300, 1000, 500), WheelGeometry.LockRect(900, 400, 100.7));
+
     [Fact]
     public void Clamp_keeps_point_inside()
         => Assert.Equal((900d, 500d), WheelGeometry.ClampToWorkArea(900, 500, 200, new Rect(0, 0, 1920, 1040)));

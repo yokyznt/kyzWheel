@@ -16,6 +16,7 @@ public sealed record AppConfig(int Version, string GlobalHotkey, IReadOnlyList<S
             new Slot("whatsapp", "WhatsApp", "\uE8BD", "#25D366", SlotType.WhatsApp, null, null, true),
             new Slot("mail", "Gmail", "\uE715", "#EA4335", SlotType.Mail, null, null, true),
             new Slot("converter", "Convertidor", "\uE8AB", "#FF8A3D", SlotType.Converter, null, null, false),
+            new Slot("clipboard", "Portapapeles", "\uE77F", "#A78BFA", SlotType.Clipboard, null, null, false),
         ],
         "#FF8A3D",
         true);

@@ -15,6 +15,18 @@ public static class WheelGeometry
         return Math.Min(count - 1, (int)(shifted / sweep));
     }
 
+    public static int SliceAtAngle(double dx, double dy, int count, double deadZone)
+    {
+        if (count <= 0 || Math.Sqrt(dx * dx + dy * dy) < deadZone) return -1;
+        return SliceAt(dx, dy, count, 0, double.MaxValue);
+    }
+
+    public static (int left, int top, int right, int bottom) LockRect(int cx, int cy, double radius)
+    {
+        var r = (int)Math.Floor(radius);
+        return (cx - r, cy - r, cx + r, cy + r);
+    }
+
     public static (double startDeg, double sweepDeg) SliceArc(int index, int count)
     {
         var sweep = 360.0 / count;

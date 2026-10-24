@@ -42,7 +42,7 @@ public sealed class SettingsWindow : GlassWindow
     private static readonly (SlotType Type, string Name)[] Types =
     [
         (SlotType.WhatsApp, "WhatsApp"), (SlotType.Mail, "Correo"), (SlotType.Converter, "Convertidor"),
-        (SlotType.LaunchApp, "Abrir app"), (SlotType.OpenUrl, "Abrir URL"), (SlotType.SendToFolder, "Enviar a carpeta"),
+        (SlotType.LaunchApp, "Abrir app"), (SlotType.OpenUrl, "Abrir URL"), (SlotType.SendToFolder, "Enviar a carpeta"), (SlotType.Clipboard, "Portapapeles"),
     ];
 
     private readonly Func<AppConfig, IReadOnlyList<string>> _apply;
@@ -338,6 +338,7 @@ public sealed class SettingsWindow : GlassWindow
             SlotType.Mail => "\uE715",
             SlotType.Converter => "\uE8AB",
             SlotType.LaunchApp => "\uE7AC",
+            SlotType.Clipboard => "\uE77F",
             SlotType.OpenUrl => "\uE774",
             _ => "\uE8B7",
         };

@@ -20,6 +20,7 @@ public static class Ui
     public static readonly Windows.UI.Color RowHover = ColorHelper.FromArgb(0x14, 0xFF, 0xFF, 0xFF);
     public static readonly Windows.UI.Color RowPress = ColorHelper.FromArgb(0x0C, 0xFF, 0xFF, 0xFF);
     public static readonly FontFamily Icons = new("Segoe Fluent Icons,Segoe MDL2 Assets");
+    public static readonly FontFamily Font = new("ms-appx:///Assets/Fonts/Outfit.ttf#Outfit");
 
     public static Windows.UI.Color Parse(string hex, byte alpha = 0xFF)
     {
@@ -33,6 +34,7 @@ public static class Ui
 
     public static TextBlock Label(string text, double size = 13, Windows.UI.Color? color = null, bool bold = false, int maxLines = 1) => new()
     {
+        FontFamily = Font,
         Text = text,
         FontSize = size,
         Foreground = Brush(color ?? Text),

@@ -63,8 +63,15 @@ public class GlassWindow : Window
         AppWindow.Move(new Windows.Graphics.PointInt32(wa.X + (wa.W - size.Width) / 2, wa.Y + (wa.H - size.Height) / 2));
     }
 
+    private bool _animatedIn;
+
     public void BringToFront()
     {
+        if (!_animatedIn)
+        {
+            _animatedIn = true;
+            Surface.Loaded += (_, _) => KyzWheel.App.Wheel.WheelAnimations.WindowIn(Surface);
+        }
         AppWindow.Show(true);
         Activate();
         Foreground.Force(this.GetWindowHandle());

@@ -26,6 +26,21 @@ public sealed class ConverterController(ConversionCatalog catalog, Toasts toasts
 
     public async Task<string> RunAsync(IConversion c, IReadOnlyList<string> files, CancellationToken ct = default)
     {
+        if (c is IMultiConversion multi && files.Count > 1)
+        {
+            try
+            {
+                var r = await multi.RunManyAsync(files, null, ct);
+                var summary = BatchSummary.Describe([r], 0);
+                toasts.Result($"{c.Label} · listo", summary, [r.OutputPath]);
+                return summary;
+            }
+            catch (ConversionException e)
+            {
+                toasts.Result($"{c.Label} · falló", e.Message, []);
+                return e.Message;
+            }
+        }
         using var gate = new SemaphoreSlim(Math.Max(1, Environment.ProcessorCount / 2));
         var tasks = files.Select(async f =>
         {

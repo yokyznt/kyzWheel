@@ -7,7 +7,7 @@ public sealed class ConfigStore(string path)
 {
     public string FilePath { get; } = path;
 
-    public static string DefaultPath =>
+    public static string DefaultPath => Environment.GetEnvironmentVariable("KYZ_CONFIG") ??
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "kyzWheel", "config.json");
 
     public AppConfig Load()

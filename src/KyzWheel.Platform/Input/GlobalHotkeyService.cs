@@ -8,6 +8,8 @@ public sealed class GlobalHotkeyService : IDisposable
     private readonly InputThread _input;
     private readonly Dictionary<int, string> _ids = new();
     private readonly Dictionary<string, Hotkey> _mouse = new();
+    private readonly Dictionary<string, Hotkey> _hooked = new();
+    private readonly HashSet<int> _swallowUp = new();
     private int _next = 1;
 
     public event Action<string>? Triggered;
@@ -17,6 +19,7 @@ public sealed class GlobalHotkeyService : IDisposable
         _input = input;
         _input.Hotkey += n => { if (_ids.TryGetValue(n, out var id)) Triggered?.Invoke(id); };
         _input.Mouse += OnMouse;
+        _input.Key += OnKey;
     }
 
     public bool Register(string id, Hotkey h) => _input.Invoke(() =>
@@ -32,7 +35,11 @@ public sealed class GlobalHotkeyService : IDisposable
         if (h.Mods.HasFlag(Mods.Ctrl)) mods |= MOD_CONTROL;
         if (h.Mods.HasFlag(Mods.Shift)) mods |= MOD_SHIFT;
         if (h.Mods.HasFlag(Mods.Win)) mods |= MOD_WIN;
-        if (!RegisterHotKey(0, n, mods, (uint)h.VirtualKey)) return false;
+        if (!RegisterHotKey(0, n, mods, (uint)h.VirtualKey))
+        {
+            _hooked[id] = h;
+            return true;
+        }
         _ids[n] = id;
         return true;
     });
@@ -42,8 +49,28 @@ public sealed class GlobalHotkeyService : IDisposable
         foreach (var n in _ids.Keys) UnregisterHotKey(0, n);
         _ids.Clear();
         _mouse.Clear();
+        _hooked.Clear();
         return true;
     });
+
+    public IReadOnlyCollection<string> HookedIds => _hooked.Keys;
+
+    private bool OnKey(KeyHookEvent e)
+    {
+        if (e.Injected || _hooked.Count == 0) return false;
+        if (!e.Down) return _swallowUp.Remove(e.VirtualKey);
+        var mods = CurrentMods();
+        foreach (var (id, h) in _hooked)
+        {
+            if (h.VirtualKey == e.VirtualKey && h.Mods == mods)
+            {
+                _swallowUp.Add(e.VirtualKey);
+                Triggered?.Invoke(id);
+                return true;
+            }
+        }
+        return false;
+    }
 
     private bool OnMouse(MouseHookEvent e)
     {
