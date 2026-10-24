@@ -71,6 +71,7 @@ public sealed partial class WheelWindow : Window
 
     public nint GetWindowHandleSafe() => this.GetWindowHandle();
     public WheelMode Mode => _mode;
+    public static bool Passive { get; } = Environment.GetCommandLineArgs().Contains("--passive");
 
     public WheelWindow()
     {
@@ -265,7 +266,7 @@ public sealed partial class WheelWindow : Window
         var (cx, cy) = WheelGeometry.ClampToWorkArea(x, y, px / 2.0, new KyzWheel.Core.Wheel.Rect(wa.X, wa.Y, wa.W, wa.H));
         AppWindow.MoveAndResize(new Windows.Graphics.RectInt32((int)cx - px / 2, (int)cy - px / 2, px, px));
         Dwm.ClipCircle(this.GetWindowHandle(), px, (DiscR + 1) * scale);
-        _locked = _mode != WheelMode.Drag;
+        _locked = _mode != WheelMode.Drag && !Passive;
         _scale = scale;
         _sx = 0;
         _sy = 0;
@@ -285,7 +286,7 @@ public sealed partial class WheelWindow : Window
         _shownAt = Environment.TickCount64;
         if (_perf is not null) CompositionTarget.Rendering += OnFirstRender;
         AppWindow.Show(activate);
-        if (activate)
+        if (activate && !Passive)
         {
             Activate();
             Foreground.Force(this.GetWindowHandle());
@@ -449,10 +450,10 @@ public sealed partial class WheelWindow : Window
             group.Children.Add(halo);
             var mid = n == 1 ? 180 : WheelGeometry.SliceArc(i, n).startDeg + 180.0 / n;
             var (mx, my) = Polar(mid, (Ro + Ri) / 2);
-            var content = new StackPanel { Width = 88, Spacing = 6, IsHitTestVisible = false };
+            var content = new StackPanel { Width = 124, Spacing = 6, IsHitTestVisible = false };
             content.Children.Add(new FontIcon { Glyph = item.Glyph, FontSize = 20, Foreground = new SolidColorBrush(Colors.White), FontFamily = new FontFamily("Segoe Fluent Icons,Segoe MDL2 Assets"), HorizontalAlignment = HorizontalAlignment.Center });
-            content.Children.Add(new TextBlock { Text = item.Label.ToUpperInvariant(), FontFamily = KyzWheel.App.Shell.Ui.Font, FontSize = 11.5, FontWeight = Microsoft.UI.Text.FontWeights.Bold, CharacterSpacing = 40, Foreground = new SolidColorBrush(Colors.White), HorizontalAlignment = HorizontalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis, MaxWidth = 84 });
-            Canvas.SetLeft(content, mx - 44);
+            content.Children.Add(new TextBlock { Text = item.Label.ToUpperInvariant(), FontFamily = KyzWheel.App.Shell.Ui.Font, FontSize = n > 6 ? 10.5 : 11.5, FontWeight = Microsoft.UI.Text.FontWeights.Bold, CharacterSpacing = 15, Foreground = new SolidColorBrush(Colors.White), HorizontalAlignment = HorizontalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis, MaxWidth = n > 6 ? 92 : 120 });
+            Canvas.SetLeft(content, mx - 62);
             Canvas.SetTop(content, my - 24);
             group.Children.Add(content);
             var badge = new Border { MinWidth = 18, Height = 18, CornerRadius = new CornerRadius(9), Background = new SolidColorBrush(color), Padding = new Thickness(5, 0, 5, 0), IsHitTestVisible = false, Child = new TextBlock { FontFamily = KyzWheel.App.Shell.Ui.Font, FontSize = 10.5, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Foreground = new SolidColorBrush(Colors.Black), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center } };
