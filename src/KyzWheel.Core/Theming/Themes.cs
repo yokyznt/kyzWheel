@@ -21,13 +21,13 @@ public static class Themes
 
     public static IReadOnlyList<ThemePalette> All { get; } =
     [
-        new("liquid", "Liquid Glass", "#7DD3FC", "#EB1E2230", "#EB0A0C14", "#33FFFFFF", "#40FFFFFF", "#F0262A38", "#F00B0D16", "#66FFFFFF", "#4D0A0C14", "#40FFFFFF", "#5538BDF8"),
-        new("obsidian", "Obsidiana", "#FF8A3D", "#FF1B1B22", "#FF0D0D12", "#1CFFFFFF", "#14FFFFFF", "#FF17171E", "#FF09090D", "#40FFFFFF", "#8C08080C", "#1FFFFFFF", "#99000000"),
-        new("tangerine", "Tangerine", "#FF8A3D", "#E6301A10", "#E6140A06", "#33FF8A3D", "#30FFD2B0", "#F03A2214", "#F0120905", "#66FFB27A", "#591A0E06", "#40FF8A3D", "#55FF8A3D"),
-        new("neon", "Cyber Neón", "#22D3EE", "#E60F0A24", "#E605030F", "#4022D3EE", "#30F472B6", "#F0170F33", "#F0060312", "#8822D3EE", "#59080418", "#5522D3EE", "#66A855F7"),
-        new("emerald", "Esmeralda", "#34D399", "#E60C2219", "#E6040D09", "#3334D399", "#30A7F3D0", "#F0102A20", "#F0040E0A", "#6634D399", "#59041610", "#4034D399", "#5534D399"),
-        new("sunset", "Atardecer", "#FB7185", "#E62A0F1A", "#E60F050A", "#33FB7185", "#30FDBA74", "#F0341424", "#F0110609", "#66FDA4AF", "#591A0810", "#40FB7185", "#55FB7185"),
-        new("midnight", "Medianoche", "#818CF8", "#E6111633", "#E6060818", "#33818CF8", "#30C7D2FE", "#F0161C40", "#F006081A", "#66A5B4FC", "#59080B20", "#40818CF8", "#55818CF8"),
+        new("liquid", "Liquid Glass", "#7DD3FC", "#24FFFFFF", "#06FFFFFF", "#3DFFFFFF", "#30FFFFFF", "#1CFFFFFF", "#05FFFFFF", "#70FFFFFF", "#9905070D", "#40FFFFFF", "#337DD3FC"),
+        new("obsidian", "Obsidiana", "#FF8A3D", "#CC1B1B22", "#E00D0D12", "#1CFFFFFF", "#12FFFFFF", "#E017171E", "#F009090D", "#38FFFFFF", "#B308080C", "#1FFFFFFF", "#66000000"),
+        new("tangerine", "Tangerine", "#FF8A3D", "#33FF9A55", "#0AFF6A1A", "#4DFFB27A", "#30FFE2CC", "#26FF9A55", "#08FF6A1A", "#70FFB27A", "#991A0E06", "#4DFF8A3D", "#40FF8A3D"),
+        new("neon", "Cyber Neón", "#22D3EE", "#337C3AED", "#0A22D3EE", "#5522D3EE", "#30F472B6", "#267C3AED", "#0822D3EE", "#8822D3EE", "#99080418", "#5522D3EE", "#55A855F7"),
+        new("emerald", "Esmeralda", "#34D399", "#2E34D399", "#0A065F46", "#4D34D399", "#30A7F3D0", "#2234D399", "#08065F46", "#7034D399", "#99041610", "#4D34D399", "#4034D399"),
+        new("sunset", "Atardecer", "#FB7185", "#2EFB7185", "#0AFDBA74", "#4DFB7185", "#30FDBA74", "#22FB7185", "#08FDBA74", "#70FDA4AF", "#991A0810", "#4DFB7185", "#40FB7185"),
+        new("midnight", "Medianoche", "#818CF8", "#2E818CF8", "#0A1E1B4B", "#4D818CF8", "#30C7D2FE", "#22818CF8", "#081E1B4B", "#70A5B4FC", "#99080B20", "#4D818CF8", "#40818CF8"),
     ];
 
     public static ThemePalette Find(string? id) => All.FirstOrDefault(t => t.Id == id) ?? All[0];

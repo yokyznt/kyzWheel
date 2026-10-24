@@ -22,7 +22,7 @@ public sealed partial class WheelWindow : Window
     private const double C = Size / 2;
     private const double Ro = 196;
     private const double Ri = 76;
-    private const double GapDeg = 2.2;
+    private const double GapDeg = 0.9;
 
     private sealed record SliceVisual(Canvas Group, Path Body, Path Halo, Border Badge, WheelItem Item);
 
@@ -54,7 +54,7 @@ public sealed partial class WheelWindow : Window
         InitializeComponent();
         ApplyTheme();
         KyzWheel.App.Shell.Theme.Changed += ApplyTheme;
-        SystemBackdrop = new TransparentTintBackdrop();
+        SystemBackdrop = new KyzWheel.App.Shell.GlassBackdrop(1f);
         var p = (OverlappedPresenter)AppWindow.Presenter;
         p.SetBorderAndTitleBar(false, false);
         p.IsResizable = false;
@@ -95,6 +95,7 @@ public sealed partial class WheelWindow : Window
         _pages = [page];
         _page = 0;
         AppWindow.MoveAndResize(new Windows.Graphics.RectInt32(-32000, -32000, 440, 440));
+        Dwm.ClipCircle(this.GetWindowHandle(), 440, Ro + 1);
         BuildPage(0);
         AppWindow.Show(false);
         WheelAnimations.Open(Stage, _slices.Select(s => (UIElement)s.Group).ToList());
@@ -135,6 +136,7 @@ public sealed partial class WheelWindow : Window
         var wa = User32.WorkAreaAt(x, y);
         var (cx, cy) = WheelGeometry.ClampToWorkArea(x, y, px / 2.0, new KyzWheel.Core.Wheel.Rect(wa.X, wa.Y, wa.W, wa.H));
         AppWindow.MoveAndResize(new Windows.Graphics.RectInt32((int)cx - px / 2, (int)cy - px / 2, px, px));
+        Dwm.ClipCircle(this.GetWindowHandle(), px, (Ro + 1) * scale);
         BuildPage(0);
         _shown = true;
         _activeSinceShow = false;

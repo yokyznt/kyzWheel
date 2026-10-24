@@ -15,7 +15,7 @@ public class GlassWindow : Window
     public GlassWindow(string title, int width, int height, bool chrome = true)
     {
         Title = title;
-        SystemBackdrop = new DesktopAcrylicBackdrop();
+        SystemBackdrop = new GlassBackdrop();
         Surface = new Grid { RequestedTheme = ElementTheme.Dark, BorderThickness = new Thickness(1) };
         Paint();
         Theme.Changed += Paint;
@@ -47,10 +47,10 @@ public class GlassWindow : Window
     private void Paint()
     {
         var t = Theme.Current;
-        var tint = Theme.Argb(t.PanelTint);
-        var bg = new LinearGradientBrush { StartPoint = new Windows.Foundation.Point(0, 0), EndPoint = new Windows.Foundation.Point(0.4, 1) };
-        bg.GradientStops.Add(new GradientStop { Color = ColorHelper.FromArgb((byte)Math.Max(0, tint.A - 0x18), tint.R, tint.G, tint.B), Offset = 0 });
-        bg.GradientStops.Add(new GradientStop { Color = ColorHelper.FromArgb((byte)Math.Min(255, tint.A + 0x30), tint.R, tint.G, tint.B), Offset = 1 });
+        var sheen = Theme.Argb(t.Sheen);
+        var bg = new LinearGradientBrush { StartPoint = new Windows.Foundation.Point(0, 0), EndPoint = new Windows.Foundation.Point(0.55, 0.6) };
+        bg.GradientStops.Add(new GradientStop { Color = ColorHelper.FromArgb((byte)(sheen.A / 3), sheen.R, sheen.G, sheen.B), Offset = 0 });
+        bg.GradientStops.Add(new GradientStop { Color = ColorHelper.FromArgb(0, sheen.R, sheen.G, sheen.B), Offset = 1 });
         Surface.Background = bg;
         Surface.BorderBrush = Theme.Edge(t.PanelEdge);
     }

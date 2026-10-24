@@ -46,6 +46,19 @@ public static partial class Dwm
         MakeBorderless(hwnd);
     }
 
+    [LibraryImport("gdi32.dll")]
+    private static partial nint CreateEllipticRgn(int left, int top, int right, int bottom);
+
+    [LibraryImport("user32.dll")]
+    private static partial int SetWindowRgn(nint hwnd, nint region, [MarshalAs(UnmanagedType.Bool)] bool redraw);
+
+    public static void ClipCircle(nint hwnd, int sizePx, double radiusPx)
+    {
+        var c = sizePx / 2.0;
+        var r = (int)Math.Ceiling(radiusPx);
+        SetWindowRgn(hwnd, CreateEllipticRgn((int)(c - r), (int)(c - r), (int)(c + r) + 1, (int)(c + r) + 1), true);
+    }
+
     public static void MakeBorderless(nint hwnd)
     {
         uint none = DWMWA_COLOR_NONE;
