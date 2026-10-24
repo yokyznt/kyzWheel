@@ -17,7 +17,7 @@ public sealed class ChordTrackerTests
         var r = _t.Down(Space);
         Assert.Equal("global", r.Fired);
         Assert.True(r.Swallow);
-        Assert.True(_t.Up(Space));
+        Assert.True(_t.Up(Space).Swallow);
     }
 
     [Fact]
@@ -82,5 +82,45 @@ public sealed class ChordTrackerTests
         _t.Set("slot:x", new Hotkey(Mods.Alt, K, null));
         _t.Down(Alt);
         Assert.Equal("slot:x", _t.Down(K).Fired);
+    }
+
+    [Fact]
+    public void Modifier_only_fires_on_release_after_all_held()
+    {
+        var t = new ChordTracker();
+        t.Set("m", new Hotkey(Mods.Ctrl | Mods.Shift | Mods.Alt, 0, null));
+        Assert.Null(t.Down(Ctrl).Fired);
+        Assert.Null(t.Down(Alt).Fired);
+        var d = t.Down(Shift);
+        Assert.Null(d.Fired);
+        Assert.False(d.Swallow);
+        var u = t.Up(Alt);
+        Assert.Equal("m", u.Fired);
+        Assert.False(u.Swallow);
+        Assert.Null(t.Up(Ctrl).Fired);
+        Assert.Null(t.Up(Shift).Fired);
+    }
+
+    [Fact]
+    public void Modifier_only_cancelled_by_other_key()
+    {
+        var t = new ChordTracker();
+        t.Set("m", new Hotkey(Mods.Ctrl | Mods.Shift | Mods.Alt, 0, null));
+        t.Down(Ctrl);
+        t.Down(Shift);
+        t.Down(Alt);
+        t.Down(K);
+        t.Up(K);
+        Assert.Null(t.Up(Alt).Fired);
+    }
+
+    [Fact]
+    public void Modifier_only_needs_exactly_those_mods()
+    {
+        var t = new ChordTracker();
+        t.Set("m", new Hotkey(Mods.Ctrl | Mods.Shift | Mods.Alt, 0, null));
+        t.Down(Ctrl);
+        t.Down(Shift);
+        Assert.Null(t.Up(Shift).Fired);
     }
 }

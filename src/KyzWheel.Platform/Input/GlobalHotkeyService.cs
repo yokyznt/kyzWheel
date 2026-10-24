@@ -38,6 +38,7 @@ public sealed class GlobalHotkeyService : IDisposable
             return true;
         }
         _chords.Set(id, h);
+        if (h.ModifierOnly) return true;
         var n = _next++;
         uint mods = MOD_NOREPEAT;
         if (h.Mods.HasFlag(Mods.Alt)) mods |= MOD_ALT;
@@ -62,7 +63,12 @@ public sealed class GlobalHotkeyService : IDisposable
     private bool OnKey(KeyHookEvent e)
     {
         if (e.Injected || _chords.Count == 0) return false;
-        if (!e.Down) return _chords.Up(e.VirtualKey);
+        if (!e.Down)
+        {
+            var u = _chords.Up(e.VirtualKey);
+            if (u.Fired is { } uid) Fire(uid);
+            return u.Swallow;
+        }
         var me = ChordTracker.Normalize(e.VirtualKey);
         _chords.Prune(k => k == me || Held(k));
         var r = _chords.Down(e.VirtualKey);

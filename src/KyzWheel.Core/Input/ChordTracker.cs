@@ -10,6 +10,7 @@ public sealed class ChordTracker
     private readonly HashSet<int> _down = new();
     private readonly HashSet<string> _fired = new();
     private readonly HashSet<int> _swallowUp = new();
+    private readonly HashSet<string> _armed = new();
 
     public static int Normalize(int vk) => vk switch
     {
@@ -26,13 +27,14 @@ public sealed class ChordTracker
 
     public void Set(string id, Hotkey h)
     {
-        var s = new HashSet<int> { Normalize(h.VirtualKey) };
+        var s = new HashSet<int>();
+        if (!h.ModifierOnly) s.Add(Normalize(h.VirtualKey));
         if (h.Mods.HasFlag(Mods.Ctrl)) s.Add(Ctrl);
         if (h.Mods.HasFlag(Mods.Shift)) s.Add(Shift);
         if (h.Mods.HasFlag(Mods.Alt)) s.Add(Alt);
         if (h.Mods.HasFlag(Mods.Win)) s.Add(Win);
         _keys[id] = s;
-        _main[id] = Normalize(h.VirtualKey);
+        _main[id] = h.ModifierOnly ? 0 : Normalize(h.VirtualKey);
     }
 
     public void Clear()
@@ -40,6 +42,7 @@ public sealed class ChordTracker
         _keys.Clear();
         _main.Clear();
         _fired.Clear();
+        _armed.Clear();
     }
 
     public void Prune(Func<int, bool> isDown) => _down.RemoveWhere(k => !isDown(k));
@@ -52,6 +55,12 @@ public sealed class ChordTracker
         var swallow = false;
         foreach (var (id, req) in _keys)
         {
+            if (_main[id] == 0)
+            {
+                if (req.SetEquals(_down)) _armed.Add(id);
+                else if (!req.Contains(vk)) _armed.Remove(id);
+                continue;
+            }
             if (!req.SetEquals(_down)) continue;
             if (vk == _main[id])
             {
@@ -63,12 +72,17 @@ public sealed class ChordTracker
         return new ChordResult(fired, swallow);
     }
 
-    public bool Up(int vk)
+    public ChordResult Up(int vk)
     {
         vk = Normalize(vk);
         _down.Remove(vk);
+        string? fired = null;
         foreach (var (id, req) in _keys)
-            if (req.Contains(vk)) _fired.Remove(id);
-        return _swallowUp.Remove(vk);
+        {
+            if (!req.Contains(vk)) continue;
+            _fired.Remove(id);
+            if (_armed.Remove(id)) fired ??= id;
+        }
+        return new ChordResult(fired, _swallowUp.Remove(vk));
     }
 }

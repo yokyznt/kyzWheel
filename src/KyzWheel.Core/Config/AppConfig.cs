@@ -19,7 +19,7 @@ public sealed record AppConfig(int Version, string GlobalHotkey, IReadOnlyList<S
 
     public static AppConfig Default { get; } = new(
         1,
-        "Ctrl+Alt+Space",
+        "Ctrl+Alt+Shift",
         [
             new Slot("messages", "Mensajes", "\uE8F2", "#34D399", SlotType.Messages, null, null, true),
             new Slot("converter", "Convertidor", "\uE8AB", "#FF8A3D", SlotType.Converter, null, null, false),

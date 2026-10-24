@@ -13,7 +13,7 @@ public sealed class ConfigStoreTests : IDisposable
     public void Default_has_three_slots_and_hotkey()
     {
         var c = AppConfig.Default;
-        Assert.Equal("Ctrl+Alt+Space", c.GlobalHotkey);
+        Assert.Equal("Ctrl+Alt+Shift", c.GlobalHotkey);
         Assert.Equal(new[] { SlotType.Messages, SlotType.Converter, SlotType.Clipboard, SlotType.Phone }, c.Slots.Select(s => s.Type));
         Assert.True(c.StartWithWindows);
     }
@@ -44,7 +44,7 @@ public sealed class ConfigStoreTests : IDisposable
     {
         File.WriteAllText(PathOf, "{ not json");
         var c = new ConfigStore(PathOf).Load();
-        Assert.Equal("Ctrl+Alt+Space", c.GlobalHotkey);
+        Assert.Equal("Ctrl+Alt+Shift", c.GlobalHotkey);
         var backups = Directory.GetFiles(Path.GetDirectoryName(PathOf)!, Path.GetFileName(PathOf) + ".*.bak");
         Assert.Single(backups);
         Assert.Equal("{ not json", File.ReadAllText(backups[0]));
@@ -89,7 +89,7 @@ public sealed class ConfigStoreTests : IDisposable
         var s = AppConfig.Default.Slots;
         var dupId = AppConfig.Default with { Slots = [s[0], s[1] with { Id = s[0].Id }] };
         var dupKey = AppConfig.Default with { Slots = [s[0] with { Hotkey = "Alt+1" }, s[1] with { Hotkey = "alt + 1" }] };
-        var clashGlobal = AppConfig.Default with { Slots = [s[0] with { Hotkey = "Ctrl+Alt+Space" }] };
+        var clashGlobal = AppConfig.Default with { Slots = [s[0] with { Hotkey = "Ctrl+Shift+Alt" }] };
         Assert.NotEmpty(ConfigStore.Validate(dupId));
         Assert.NotEmpty(ConfigStore.Validate(dupKey));
         Assert.NotEmpty(ConfigStore.Validate(clashGlobal));

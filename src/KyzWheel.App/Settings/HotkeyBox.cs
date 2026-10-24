@@ -36,6 +36,22 @@ public sealed class HotkeyBox : Button
         Click += (_, _) => Start();
         LostFocus += (_, _) => Stop();
         PreviewKeyDown += OnKey;
+        PreviewKeyUp += (_, e) =>
+        {
+            if (!_recording) return;
+            var now = Mods();
+            if (now.Length == 0 && _peak.Split('+', StringSplitOptions.RemoveEmptyEntries).Length >= 3)
+            {
+                var peak = _peak;
+                _peak = "";
+                if (Hotkey.TryParse(peak, out var h))
+                {
+                    _value = h.ToString();
+                    Changed?.Invoke(_value);
+                }
+                Stop();
+            }
+        };
         AddHandler(PointerPressedEvent, new PointerEventHandler(OnPointer), true);
     }
 
@@ -54,6 +70,8 @@ public sealed class HotkeyBox : Button
         Value = _value;
         RecordingChanged?.Invoke(false);
     }
+
+    private string _peak = "";
 
     private static bool Down(VirtualKey k) => InputKeyboardSource.GetKeyStateForCurrentThread(k).HasFlag(CoreVirtualKeyStates.Down);
 
@@ -86,7 +104,12 @@ public sealed class HotkeyBox : Button
         var k = e.Key;
         if (k is VirtualKey.Control or VirtualKey.Shift or VirtualKey.Menu or VirtualKey.LeftWindows or VirtualKey.RightWindows
             or VirtualKey.LeftControl or VirtualKey.RightControl or VirtualKey.LeftShift or VirtualKey.RightShift or VirtualKey.LeftMenu or VirtualKey.RightMenu)
+        {
+            var m = Mods();
+            if (m.Split('+', StringSplitOptions.RemoveEmptyEntries).Length > _peak.Split('+', StringSplitOptions.RemoveEmptyEntries).Length) _peak = m;
             return;
+        }
+        _peak = "";
         if (k == VirtualKey.Escape && Mods().Length == 0)
         {
             Stop();

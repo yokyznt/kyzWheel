@@ -51,7 +51,7 @@ public readonly record struct Hotkey(Mods Mods, int VirtualKey, MouseButton? Mou
             else if (KeyCode(t) is { } code) vk = code;
             else return false;
         }
-        if (vk is null && mouse is null) return false;
+        if (vk is null && mouse is null && System.Numerics.BitOperations.PopCount((uint)mods) < 3) return false;
         hotkey = new Hotkey(mods, vk ?? 0, mouse);
         return true;
     }
@@ -64,6 +64,8 @@ public readonly record struct Hotkey(Mods Mods, int VirtualKey, MouseButton? Mou
             return 0x70 + f - 1;
         return null;
     }
+
+    public bool ModifierOnly => Mouse is null && VirtualKey == 0;
 
     private string KeyName()
     {
@@ -81,7 +83,7 @@ public readonly record struct Hotkey(Mods Mods, int VirtualKey, MouseButton? Mou
         if (Mods.HasFlag(Mods.Alt)) parts.Add("Alt");
         if (Mods.HasFlag(Mods.Shift)) parts.Add("Shift");
         if (Mods.HasFlag(Mods.Win)) parts.Add("Win");
-        parts.Add(KeyName());
+        if (!ModifierOnly) parts.Add(KeyName());
         return string.Join('+', parts);
     }
 
@@ -89,6 +91,7 @@ public readonly record struct Hotkey(Mods Mods, int VirtualKey, MouseButton? Mou
     {
         if (h.Mouse is not null) return false;
         if (h.Mods == Mods.None) return true;
+        if (h.ModifierOnly) return System.Numerics.BitOperations.PopCount((uint)h.Mods) < 3;
         var s = h.ToString();
         return s is "Win+L" or "Ctrl+Alt+Delete" or "Alt+Tab" or "Alt+F4" or "Ctrl+Esc" or "Alt+Esc" or "Ctrl+Shift+Esc" or "Win+D" or "Shift+Alt+Tab";
     }
