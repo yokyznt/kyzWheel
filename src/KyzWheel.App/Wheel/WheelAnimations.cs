@@ -70,11 +70,72 @@ public static class WheelAnimations
         batch.Completed += (_, _) => done();
     }
 
-    public static void Hover(UIElement slice, UIElement halo, bool on)
+    public static void Hover(UIElement slice, UIElement halo, bool on, double midDeg = double.NaN)
     {
         var ms = Enabled ? 110 : 1;
-        Scale(V(slice), V(slice).Scale.X == 0 ? 1 : V(slice).Scale.X, on ? 1.035f : 1f, ms);
+        var v = V(slice);
+        Scale(v, v.Scale.X == 0 ? 1 : v.Scale.X, on ? 1.035f : 1f, ms);
         Fade(V(halo), V(halo).Opacity, on ? 0.6f : 0f, ms);
+        if (!Enabled || double.IsNaN(midDeg)) return;
+        var a = midDeg * Math.PI / 180;
+        var lift = on ? new Vector3((float)(Math.Sin(a) * 5), (float)(-Math.Cos(a) * 5), 0) : Vector3.Zero;
+        var c = v.Compositor;
+        var spring = c.CreateSpringVector3Animation();
+        spring.FinalValue = lift;
+        spring.DampingRatio = 1f;
+        spring.Period = TimeSpan.FromMilliseconds(38);
+        ElementCompositionPreview.SetIsTranslationEnabled(slice, true);
+        v.StartAnimation("Translation", spring);
+    }
+
+    public static void PointTo(UIElement pointer, double deg, bool visible)
+    {
+        var v = V(pointer);
+        var c = v.Compositor;
+        Fade(v, v.Opacity, visible ? 1f : 0f, Enabled ? 120 : 60);
+        if (!visible) return;
+        var current = v.RotationAngleInDegrees;
+        var target = (float)deg;
+        while (target - current > 180) target -= 360;
+        while (current - target > 180) target += 360;
+        if (!Enabled)
+        {
+            v.RotationAngleInDegrees = target;
+            return;
+        }
+        var spring = c.CreateSpringScalarAnimation();
+        spring.FinalValue = target;
+        spring.DampingRatio = 1f;
+        spring.Period = TimeSpan.FromMilliseconds(32);
+        v.StartAnimation("RotationAngleInDegrees", spring);
+    }
+
+    public static void Crossfade(UIElement root)
+    {
+        var v = V(root);
+        Fade(v, 0.55f, 1f, Enabled ? 200 : 80);
+    }
+
+    public static void WindowIn(UIElement root)
+    {
+        var v = V(root);
+        if (root is FrameworkElement fe) v.CenterPoint = new Vector3((float)fe.ActualWidth / 2, (float)fe.ActualHeight / 2, 0);
+        Fade(v, 0, 1, Enabled ? 200 : 80);
+        if (Enabled) Scale(v, 0.97f, 1f, 240);
+    }
+
+    public static void RowEnter(UIElement row)
+    {
+        var v = V(row);
+        Fade(v, 0, 1, Enabled ? 200 : 80);
+        if (!Enabled) return;
+        var c = v.Compositor;
+        ElementCompositionPreview.SetIsTranslationEnabled(row, true);
+        var t = c.CreateVector3KeyFrameAnimation();
+        t.InsertKeyFrame(0f, new Vector3(0, -10, 0));
+        t.InsertKeyFrame(1f, Vector3.Zero, Ease(c));
+        t.Duration = TimeSpan.FromMilliseconds(220);
+        v.StartAnimation("Translation", t);
     }
 
     public static void PageSwitch(UIElement layer, int direction)
@@ -100,15 +161,30 @@ public static class WheelAnimations
         var c = v.Compositor;
         if (Enabled)
         {
+            ElementCompositionPreview.SetIsTranslationEnabled(panel, true);
             var t = c.CreateVector3KeyFrameAnimation();
-            t.InsertKeyFrame(0f, new Vector3(14, 0, 0));
+            t.InsertKeyFrame(0f, new Vector3(0, 10, 0));
             t.InsertKeyFrame(1f, Vector3.Zero, Ease(c));
-            t.Duration = TimeSpan.FromMilliseconds(200);
+            t.Duration = TimeSpan.FromMilliseconds(220);
             v.StartAnimation("Translation", t);
+            if (panel is FrameworkElement fe) v.CenterPoint = new Vector3((float)fe.ActualWidth / 2, (float)fe.ActualHeight / 2, 0);
+            Scale(v, 0.97f, 1f, 220);
         }
         Fade(v, 0, 1, Enabled ? 200 : 80);
         if (!Enabled) return;
-        for (var i = 0; i < rows.Count; i++) Fade(V(rows[i]), 0, 1, 200, 18 * i);
+        for (var i = 0; i < Math.Min(rows.Count, 10); i++)
+        {
+            var r = V(rows[i]);
+            Fade(r, 0, 1, 180, 40 + 18 * i);
+            ElementCompositionPreview.SetIsTranslationEnabled(rows[i], true);
+            var t = c.CreateVector3KeyFrameAnimation();
+            t.InsertKeyFrame(0f, new Vector3(0, 6, 0));
+            t.InsertKeyFrame(1f, Vector3.Zero, Ease(c));
+            t.Duration = TimeSpan.FromMilliseconds(180);
+            t.DelayTime = TimeSpan.FromMilliseconds(40 + 18 * i);
+            t.DelayBehavior = AnimationDelayBehavior.SetInitialValueBeforeDelay;
+            r.StartAnimation("Translation", t);
+        }
     }
 
     public static void BadgePop(UIElement badge)

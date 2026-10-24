@@ -14,6 +14,7 @@ public sealed class MailPanel : Grid
     private readonly Action _addAccount;
     private readonly StackPanel _rows = new() { Spacing = 2 };
     private readonly StackPanel _status = new() { Spacing = 6 };
+    private string? _lastTop;
 
     public MailPanel(MailService service, Action<MailSummary> open, Action addAccount)
     {
@@ -50,7 +51,10 @@ public sealed class MailPanel : Grid
             _rows.Children.Add(Empty(loading ? "\uE895" : "\uE73E", loading ? "Conectando…" : "Todo al día", loading ? "Trayendo tus correos recientes" : "No hay correos recientes", null, null));
             return;
         }
+        var newTop = _lastTop is not null && top[0].MessageId != _lastTop;
+        _lastTop = top[0].MessageId;
         foreach (var m in top) _rows.Children.Add(Row(m));
+        if (newTop) KyzWheel.App.Wheel.WheelAnimations.RowEnter(_rows.Children[0]);
     }
 
     private UIElement Row(MailSummary m)

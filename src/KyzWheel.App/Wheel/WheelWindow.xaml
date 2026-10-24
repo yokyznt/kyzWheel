@@ -14,6 +14,10 @@
                 </Ellipse.Fill>
             </Ellipse>
             <Canvas x:Name="Layer" Width="440" Height="440" />
+            <Canvas x:Name="Pointer" Width="440" Height="440" Opacity="0" IsHitTestVisible="False">
+                <Path x:Name="PointerArc" StrokeThickness="3" StrokeStartLineCap="Round" StrokeEndLineCap="Round" Data="M 195.4,82.8 A 140,140 0 0 1 244.6,82.8" />
+                <Ellipse x:Name="PointerDot" Canvas.Left="215" Canvas.Top="74" Width="10" Height="10" />
+            </Canvas>
             <Ellipse x:Name="Rim" Canvas.Left="24" Canvas.Top="24" Width="392" Height="392" StrokeThickness="1" IsHitTestVisible="False">
                 <Ellipse.Stroke>
                     <LinearGradientBrush StartPoint="0.5,0" EndPoint="0.5,1">

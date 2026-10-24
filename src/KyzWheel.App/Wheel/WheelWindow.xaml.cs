@@ -72,6 +72,7 @@ public sealed partial class WheelWindow : Window
         Title = "kyzWheel";
         WheelAnimations.SetCenter(Stage, (float)C, (float)C);
         WheelAnimations.SetCenter(Layer, (float)C, (float)C);
+        WheelAnimations.SetCenter(Pointer, (float)C, (float)C);
         Root.PointerMoved += OnPointerMoved;
         Root.PointerReleased += OnPointerReleased;
         Root.PointerPressed += (_, e) =>
@@ -233,6 +234,7 @@ public sealed partial class WheelWindow : Window
 
     private void Unlock()
     {
+        WheelAnimations.PointTo(Pointer, 0, false);
         if (!_locked) return;
         _locked = false;
         _lockTimer.Stop();
@@ -369,6 +371,10 @@ public sealed partial class WheelWindow : Window
         glow.GradientStops.Add(new GradientStop { Color = ColorHelper.FromArgb((byte)(g.A / 3), g.R, g.G, g.B), Offset = 0.92 });
         glow.GradientStops.Add(new GradientStop { Color = ColorHelper.FromArgb(0, g.R, g.G, g.B), Offset = 1 });
         Glow.Fill = glow;
+        var accent = KyzWheel.App.Shell.Theme.Argb(t.Accent);
+        PointerArc.Stroke = new SolidColorBrush(accent);
+        PointerDot.Fill = new SolidColorBrush(accent);
+        if (_shown) WheelAnimations.Crossfade(Stage);
         if (_pages.Count > 0) BuildPage(_page);
     }
 
@@ -446,11 +452,11 @@ public sealed partial class WheelWindow : Window
     private void SetHover(int index)
     {
         if (index == _hover) return;
-        if (_hover >= 0 && _hover < _slices.Count) WheelAnimations.Hover(_slices[_hover].Group, _slices[_hover].Halo, false);
+        if (_hover >= 0 && _hover < _slices.Count) WheelAnimations.Hover(_slices[_hover].Group, _slices[_hover].Halo, false, MidDeg(_hover));
         _hover = index;
         if (_hover >= 0)
         {
-            WheelAnimations.Hover(_slices[_hover].Group, _slices[_hover].Halo, true);
+            WheelAnimations.Hover(_slices[_hover].Group, _slices[_hover].Halo, true, MidDeg(_hover));
             HubTitle.Text = _slices[_hover].Item.Label;
         }
         else if (_pages.Count > 0)
@@ -459,12 +465,30 @@ public sealed partial class WheelWindow : Window
         }
     }
 
-    private void OnPointerMoved(object sender, PointerRoutedEventArgs e) => SetHover(HitTest(e.GetCurrentPoint(Stage).Position));
+    private double MidDeg(int i) => _slices.Count <= 1 ? 180 : WheelGeometry.SliceArc(i, _slices.Count).startDeg + 180.0 / _slices.Count;
 
-    private void OnPointerReleased(object sender, PointerRoutedEventArgs e)
+    private void OnPointerMoved(object sender, PointerRoutedEventArgs e)
     {
         var p = e.GetCurrentPoint(Stage).Position;
         var idx = HitTest(p);
+        SetHover(idx);
+        if (_locked)
+        {
+            var dx = p.X - C;
+            var dy = p.Y - C;
+            var deg = Math.Atan2(dx, -dy) * 180 / Math.PI;
+            WheelAnimations.PointTo(Pointer, deg, Math.Sqrt(dx * dx + dy * dy) >= Ri * 0.55);
+        }
+    }
+
+    private void OnPointerReleased(object sender, PointerRoutedEventArgs e)
+    {
+        if (e.GetCurrentPoint(Stage).Properties.PointerUpdateKind == Microsoft.UI.Input.PointerUpdateKind.RightButtonReleased) return;
+        Choose(HitTest(e.GetCurrentPoint(Stage).Position));
+    }
+
+    private void Choose(int idx)
+    {
         if (idx >= 0)
         {
             var item = _slices[idx].Item;
@@ -499,6 +523,20 @@ public sealed partial class WheelWindow : Window
                 break;
             case Windows.System.VirtualKey.Left:
                 PrevPage();
+                e.Handled = true;
+                break;
+            case Windows.System.VirtualKey.Enter when _hover >= 0:
+                Choose(_hover);
+                e.Handled = true;
+                break;
+            case >= Windows.System.VirtualKey.Number1 and <= Windows.System.VirtualKey.Number8:
+            case >= Windows.System.VirtualKey.NumberPad1 and <= Windows.System.VirtualKey.NumberPad8:
+                var n = e.Key >= Windows.System.VirtualKey.NumberPad1 ? e.Key - Windows.System.VirtualKey.NumberPad1 : e.Key - Windows.System.VirtualKey.Number1;
+                if (n < _slices.Count)
+                {
+                    SetHover(n);
+                    Choose(n);
+                }
                 e.Handled = true;
                 break;
         }
