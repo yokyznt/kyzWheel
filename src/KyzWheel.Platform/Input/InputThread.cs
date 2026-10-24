@@ -48,6 +48,15 @@ public sealed class InputThread : IDisposable
         return tcs.Task.GetAwaiter().GetResult();
     }
 
+    public void Rehook() => Invoke(() =>
+    {
+        if (_mouseHook != 0) UnhookWindowsHookEx(_mouseHook);
+        if (_keyHook != 0) UnhookWindowsHookEx(_keyHook);
+        _mouseHook = SetWindowsHookExW(WH_MOUSE_LL, _mouseProc, 0, 0);
+        _keyHook = SetWindowsHookExW(WH_KEYBOARD_LL, _keyProc, 0, 0);
+        return true;
+    });
+
     private void Run()
     {
         _threadId = GetCurrentThreadId();

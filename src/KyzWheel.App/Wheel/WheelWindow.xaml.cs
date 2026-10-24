@@ -20,11 +20,12 @@ public sealed partial class WheelWindow : Window
 {
     private const double Size = 360;
     private const double C = Size / 2;
-    private const double Ro = 160;
-    private const double Ri = 62;
-    private const double GapPx = 5;
-    private const double CornerOut = 14;
-    private const double CornerIn = 9;
+    private const double DiscR = 178;
+    private const double Ro = 166;
+    private const double Ri = 78;
+    private const double GapPx = 9;
+    private const double CornerOut = 24;
+    private const double CornerIn = 15;
 
     private sealed record SliceVisual(Canvas Group, Path Body, Path Halo, Border Badge, WheelItem Item);
 
@@ -54,7 +55,7 @@ public sealed partial class WheelWindow : Window
     public Func<WheelItem, WheelMode, WheelPage?>? Expand { get; set; }
     public event Action<WheelItem?, IReadOnlyList<WheelItem>>? Overflow;
     public IReadOnlyList<string> Files => _dragFiles;
-    private readonly Stack<(IReadOnlyList<WheelPage> Pages, int Page, WheelItem? Parent)> _stack = new();
+    private readonly Stack<(IReadOnlyList<WheelPage> Pages, int Page, WheelItem? Parent, IReadOnlyList<string> Files)> _stack = new();
     private WheelItem? _parent;
     public int Depth => _stack.Count;
 
@@ -121,7 +122,7 @@ public sealed partial class WheelWindow : Window
         _pages = [page];
         _page = 0;
         AppWindow.MoveAndResize(new Windows.Graphics.RectInt32(-32000, -32000, (int)Size, (int)Size));
-        Dwm.ClipCircle(this.GetWindowHandle(), (int)Size, Ro + 1);
+        Dwm.ClipCircle(this.GetWindowHandle(), (int)Size, DiscR + 1);
         BuildPage(0);
         AppWindow.Show(false);
         WheelAnimations.Open(Stage, _slices.Select(s => (UIElement)s.Group).ToList());
@@ -173,7 +174,7 @@ public sealed partial class WheelWindow : Window
                 : await (await StorageFile.GetFileFromPathAsync(path)).GetThumbnailAsync(Windows.Storage.FileProperties.ThumbnailMode.SingleItem, 96);
             var bmp = new Microsoft.UI.Xaml.Media.Imaging.BitmapImage();
             await bmp.SetSourceAsync(thumb);
-            if (_mode == WheelMode.Files) HubThumb.Source = bmp;
+            if (_dragFiles.Count > 0) HubThumb.Source = bmp;
         }
         catch (Exception)
         {
@@ -183,7 +184,7 @@ public sealed partial class WheelWindow : Window
     private void ClearHubFile()
     {
         HubThumbHost.Visibility = Visibility.Collapsed;
-        HubTitle.Margin = new Thickness(0, 38, 0, 0);
+        HubTitle.Margin = new Thickness(0);
         _hubDefault = null;
     }
 
@@ -208,7 +209,7 @@ public sealed partial class WheelWindow : Window
         var wa = User32.WorkAreaAt(x, y);
         var (cx, cy) = WheelGeometry.ClampToWorkArea(x, y, px / 2.0, new KyzWheel.Core.Wheel.Rect(wa.X, wa.Y, wa.W, wa.H));
         AppWindow.MoveAndResize(new Windows.Graphics.RectInt32((int)cx - px / 2, (int)cy - px / 2, px, px));
-        Dwm.ClipCircle(this.GetWindowHandle(), px, (Ro + 1) * scale);
+        Dwm.ClipCircle(this.GetWindowHandle(), px, (DiscR + 1) * scale);
         _locked = _mode == WheelMode.Files;
         if (_locked)
         {
@@ -287,7 +288,7 @@ public sealed partial class WheelWindow : Window
 
     public void Push(WheelPage page, WheelItem parent)
     {
-        _stack.Push((_pages, _page, _parent));
+        _stack.Push((_pages, _page, _parent, _dragFiles));
         _parent = parent;
         _pages = [WheelFit.Fit(page, parent.ColorHex)];
         _page = 0;
@@ -297,10 +298,22 @@ public sealed partial class WheelWindow : Window
         WheelAnimations.Drill(HubTitle, true);
     }
 
+    public void AttachFiles(IReadOnlyList<string> files)
+    {
+        _dragFiles = files;
+        _hubDefault = files.Count == 1 ? System.IO.Path.GetFileName(files[0]) : $"{files.Count} archivos";
+        SetHubFile(files);
+    }
+
     public bool Back()
     {
         if (_stack.Count == 0) return false;
-        var (pages, page, parent) = _stack.Pop();
+        var (pages, page, parent, files) = _stack.Pop();
+        if (files.Count == 0 && _dragFiles.Count > 0 && _mode == WheelMode.Root)
+        {
+            _dragFiles = [];
+            ClearHubFile();
+        }
         _pages = pages;
         _page = page;
         _parent = parent;
@@ -363,24 +376,21 @@ public sealed partial class WheelWindow : Window
             var t = KyzWheel.App.Shell.Theme.Current;
             var body = new Path { Data = geometry, Fill = KyzWheel.App.Shell.Theme.Vertical(t.SliceTop, t.SliceBottom), Stroke = KyzWheel.App.Shell.Theme.Edge(t.SliceStroke), StrokeThickness = 1 };
             var sheen = new Path { Data = SliceGeometry(i, n), Fill = KyzWheel.App.Shell.Theme.Sheen(), IsHitTestVisible = false };
-            var halo = new Path { Data = SliceGeometry(i, n), Fill = Tint(color, 0x2E, 0x0A), Stroke = new SolidColorBrush(ColorHelper.FromArgb(0x99, color.R, color.G, color.B)), StrokeThickness = 1.2, Opacity = 0, IsHitTestVisible = false };
+            var halo = new Path { Data = SliceGeometry(i, n), Fill = Vivid(color), Stroke = new SolidColorBrush(ColorHelper.FromArgb(0x80, 0xFF, 0xFF, 0xFF)), StrokeThickness = 1, Opacity = 0, IsHitTestVisible = false };
             group.Children.Add(body);
             group.Children.Add(sheen);
             group.Children.Add(halo);
             var mid = n == 1 ? 180 : WheelGeometry.SliceArc(i, n).startDeg + 180.0 / n;
             var (mx, my) = Polar(mid, (Ro + Ri) / 2);
-            var content = new StackPanel { Width = 88, Spacing = 5, IsHitTestVisible = false };
-            var chip = new Grid { Width = 34, Height = 34, HorizontalAlignment = HorizontalAlignment.Center };
-            chip.Children.Add(new Ellipse { Fill = new SolidColorBrush(ColorHelper.FromArgb(0x24, color.R, color.G, color.B)), Stroke = new SolidColorBrush(ColorHelper.FromArgb(0x40, color.R, color.G, color.B)), StrokeThickness = 1 });
-            chip.Children.Add(new FontIcon { Glyph = item.Glyph, FontSize = 16, Foreground = new SolidColorBrush(color), FontFamily = new FontFamily("Segoe Fluent Icons,Segoe MDL2 Assets") });
-            content.Children.Add(chip);
-            content.Children.Add(new TextBlock { Text = item.Label, FontFamily = KyzWheel.App.Shell.Ui.Font, FontSize = 12, FontWeight = Microsoft.UI.Text.FontWeights.Medium, CharacterSpacing = 0, Foreground = new SolidColorBrush(ColorHelper.FromArgb(0xE0, 0xFF, 0xFF, 0xFF)), HorizontalAlignment = HorizontalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis, MaxWidth = 84 });
+            var content = new StackPanel { Width = 88, Spacing = 6, IsHitTestVisible = false };
+            content.Children.Add(new FontIcon { Glyph = item.Glyph, FontSize = 17, Foreground = new SolidColorBrush(ColorHelper.FromArgb(0xEE, 0xFF, 0xFF, 0xFF)), FontFamily = new FontFamily("Segoe Fluent Icons,Segoe MDL2 Assets"), HorizontalAlignment = HorizontalAlignment.Center });
+            content.Children.Add(new TextBlock { Text = item.Label.ToUpperInvariant(), FontFamily = KyzWheel.App.Shell.Ui.Font, FontSize = 10, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, CharacterSpacing = 50, Foreground = new SolidColorBrush(ColorHelper.FromArgb(0xE0, 0xFF, 0xFF, 0xFF)), HorizontalAlignment = HorizontalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis, MaxWidth = 84 });
             Canvas.SetLeft(content, mx - 44);
-            Canvas.SetTop(content, my - 28);
+            Canvas.SetTop(content, my - 21);
             group.Children.Add(content);
             var badge = new Border { MinWidth = 18, Height = 18, CornerRadius = new CornerRadius(9), Background = new SolidColorBrush(color), Padding = new Thickness(5, 0, 5, 0), IsHitTestVisible = false, Child = new TextBlock { FontFamily = KyzWheel.App.Shell.Ui.Font, FontSize = 10.5, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Foreground = new SolidColorBrush(Colors.Black), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center } };
-            Canvas.SetLeft(badge, mx + 6);
-            Canvas.SetTop(badge, my - 33);
+            Canvas.SetLeft(badge, mx + 8);
+            Canvas.SetTop(badge, my - 30);
             ApplyBadge(badge, item.Badge);
             WheelAnimations.SetCenter(badge, 9, 9);
             group.Children.Add(badge);
@@ -410,6 +420,12 @@ public sealed partial class WheelWindow : Window
         Hub.Stroke = KyzWheel.App.Shell.Theme.Edge(t.Rim);
         Rim.Stroke = KyzWheel.App.Shell.Theme.Edge(t.Rim);
         HubSheen.Fill = KyzWheel.App.Shell.Theme.Sheen();
+        var top = KyzWheel.App.Shell.Theme.Argb(t.HubTop);
+        var bottom = KyzWheel.App.Shell.Theme.Argb(t.HubBottom);
+        var disc = new LinearGradientBrush { StartPoint = new Point(0.5, 0), EndPoint = new Point(0.5, 1) };
+        disc.GradientStops.Add(new GradientStop { Color = ColorHelper.FromArgb(0x8C, top.R, top.G, top.B), Offset = 0 });
+        disc.GradientStops.Add(new GradientStop { Color = ColorHelper.FromArgb(0xB8, bottom.R, bottom.G, bottom.B), Offset = 1 });
+        Disc.Fill = disc;
         var g = KyzWheel.App.Shell.Theme.Argb(t.Glow);
         var glow = new RadialGradientBrush();
         glow.GradientStops.Add(new GradientStop { Color = g, Offset = 0.84 });
@@ -451,6 +467,14 @@ public sealed partial class WheelWindow : Window
     {
         var a = deg * Math.PI / 180;
         return (C + r * Math.Sin(a), C - r * Math.Cos(a));
+    }
+
+    private static Brush Vivid(Windows.UI.Color c)
+    {
+        var b = new LinearGradientBrush { StartPoint = new Point(0.5, 0), EndPoint = new Point(0.5, 1) };
+        b.GradientStops.Add(new GradientStop { Color = ColorHelper.FromArgb(0xF2, (byte)Math.Min(255, c.R + 30), (byte)Math.Min(255, c.G + 30), (byte)Math.Min(255, c.B + 30)), Offset = 0 });
+        b.GradientStops.Add(new GradientStop { Color = ColorHelper.FromArgb(0xF2, (byte)(c.R * 0.72), (byte)(c.G * 0.72), (byte)(c.B * 0.72)), Offset = 1 });
+        return b;
     }
 
     private static Geometry SliceGeometry(int i, int n)
@@ -569,7 +593,7 @@ public sealed partial class WheelWindow : Window
         {
             var item = _slices[idx].Item;
             WheelAnimations.Success(_slices[idx].Group);
-            if (_mode == WheelMode.Files && _dragFiles.Count > 0)
+            if (_mode != WheelMode.Drag && _dragFiles.Count > 0)
             {
                 FilesDropped?.Invoke(item, _dragFiles);
                 var t = DispatcherQueue.CreateTimer();

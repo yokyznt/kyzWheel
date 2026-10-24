@@ -43,6 +43,7 @@ public partial class App : Application
     private MailService _mail = null!;
     private WhatsAppBridge _wa = null!;
     private readonly ClipboardService _clips = new();
+    private Microsoft.UI.Dispatching.DispatcherQueueTimer? _rehook;
     private IReadOnlyList<KyzWheel.Core.WhatsApp.WaChat> _waChats = [];
     private nint _lastForeground;
     private AddAccountWindow? _addAccount;
@@ -98,6 +99,18 @@ public partial class App : Application
         _wheel.ItemInvoked += OnItemInvoked;
         _wheel.Expand = ExpandItem;
         _wheel.Overflow += OnOverflow;
+        _rehook = _ui.CreateTimer();
+        _rehook.Interval = TimeSpan.FromSeconds(45);
+        _rehook.Tick += (_, _) => _input?.Rehook();
+        _rehook.Start();
+        Microsoft.Win32.SystemEvents.PowerModeChanged += (_, e) =>
+        {
+            if (e.Mode == Microsoft.Win32.PowerModes.Resume) _ui.TryEnqueue(() => { _input?.Rehook(); ApplyConfig(_config); });
+        };
+        Microsoft.Win32.SystemEvents.SessionSwitch += (_, e) =>
+        {
+            if (e.Reason is Microsoft.Win32.SessionSwitchReason.SessionUnlock or Microsoft.Win32.SessionSwitchReason.ConsoleConnect) _ui.TryEnqueue(() => { _input?.Rehook(); ApplyConfig(_config); });
+        };
         _wheel.FilesDropped += OnFilesDropped;
         _wheel.FirstFrame += ms => Log.Write("perf.log", $"open {ms:0.0} ms");
         _wheel.Hidden += ScheduleTrim;
@@ -305,6 +318,88 @@ public partial class App : Application
         _addAccount.BringToFront();
     }
 
+    private IReadOnlyList<WheelPage> ConverterPages(IReadOnlyList<string> files)
+    {
+        var cat = _converter.Catalog;
+        return cat.PagesOrder(files)
+            .Select(page => new WheelPage(ConverterController.PageTitle(page),
+                cat.ActionsFor(page, files).Select(c => new WheelItem("conv:" + c.Id, c.Label, c.Glyph, ConverterController.PageColor(page), 0, c)).ToList(),
+                page, PageGlyph(page), ConverterController.PageColor(page)))
+            .Where(p => p.Items.Count > 0)
+            .ToList();
+    }
+
+    private static string PageGlyph(KyzWheel.Convert.ConverterPage p) => p.ToString() switch
+    {
+        "Images" => "\uEB9F",
+        "Media" => "\uE714",
+        "Documents" => "\uE8A5",
+        "Tools" => "\uE90F",
+        _ => "\uE8AB",
+    };
+
+    private WheelPage FileRootPage(IReadOnlyList<string> files)
+    {
+        var items = _config.Slots.Where(s => s.Type != SlotType.Clipboard && s.Type != SlotType.OpenUrl).Select(SlotItem).ToList();
+        if (!_config.Slots.Any(s => s.Type == SlotType.Converter))
+            items.Insert(0, new WheelItem("slot:converter", "Convertir", "\uE8AB", "#FF8A3D", 0, new Slot("converter", "Convertir", "\uE8AB", "#FF8A3D", SlotType.Converter, null, null, false)));
+        return new WheelPage(files.Count == 1 ? Path.GetFileName(files[0]) : $"{files.Count} archivos", items);
+    }
+
+    private sealed record RecentFile(string Path);
+
+    private static IReadOnlyList<string> RecentFiles(int n)
+    {
+        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        string[] dirs = [Path.Combine(home, "Downloads"), Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory), Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyPictures), "Screenshots")];
+        var files = new List<FileInfo>();
+        foreach (var d in dirs)
+        {
+            try
+            {
+                if (Directory.Exists(d)) files.AddRange(new DirectoryInfo(d).EnumerateFiles().Where(f => (f.Attributes & (FileAttributes.Hidden | FileAttributes.System)) == 0 && !f.Name.EndsWith(".lnk", StringComparison.OrdinalIgnoreCase) && !f.Name.EndsWith(".ini", StringComparison.OrdinalIgnoreCase)));
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+            {
+            }
+        }
+        return files.OrderByDescending(f => f.LastWriteTimeUtc).Take(n).Select(f => f.FullName).ToList();
+    }
+
+    private static string FileGlyph(string path) => Path.GetExtension(path).ToLowerInvariant() switch
+    {
+        ".png" or ".jpg" or ".jpeg" or ".webp" or ".heic" or ".gif" or ".bmp" or ".tiff" or ".avif" => "\uEB9F",
+        ".mp4" or ".mov" or ".mkv" or ".webm" or ".avi" => "\uE714",
+        ".mp3" or ".wav" or ".m4a" or ".flac" or ".ogg" => "\uE8D6",
+        ".pdf" or ".docx" or ".txt" or ".md" => "\uE8A5",
+        _ => "\uE8B7",
+    };
+
+    private async void PickFileForConverter()
+    {
+        var (x, y) = WheelCenter();
+        _wheel.HideAnimated();
+        var picker = new Windows.Storage.Pickers.FileOpenPicker();
+        picker.FileTypeFilter.Add("*");
+        WinRT.Interop.InitializeWithWindow.Initialize(picker, _wheel.GetWindowHandleSafe());
+        var picked = await picker.PickMultipleFilesAsync();
+        var files = picked?.Select(p => p.Path).Where(p => !string.IsNullOrEmpty(p)).ToList() ?? [];
+        if (files.Count == 0) return;
+        ShowConverterWheel(x, y, files);
+    }
+
+    private void ShowConverterWheel(int x, int y, IReadOnlyList<string> files)
+    {
+        var pages = ConverterPages(files);
+        if (pages.Count == 0)
+        {
+            _toasts.Info("Convertir", "No hay acciones para este tipo de archivo");
+            return;
+        }
+        _trimTimer?.Stop();
+        _wheel.ShowFiles(x, y, files, pages);
+    }
+
     private IReadOnlyList<WheelPage> DragPages(IReadOnlyList<string> files)
     {
         var pages = new List<WheelPage>();
@@ -341,7 +436,7 @@ public partial class App : Application
             {
                 _trimTimer?.Stop();
                 var (x, y) = User32.CursorPosition();
-                _wheel.ShowFiles(x, y, selected, DragPages(selected), sw);
+                _wheel.ShowFiles(x, y, selected, [FileRootPage(selected)], sw);
             }
             else OpenWheelAtCursor(sw);
             return;
@@ -411,9 +506,22 @@ public partial class App : Application
 
     private WheelPage? ExpandItem(WheelItem item, WheelMode mode)
     {
+        if (item.Tag is RecentFile rf)
+        {
+            _wheel.AttachFiles([rf.Path]);
+            var pages = ConverterPages([rf.Path]);
+            return pages.Count == 0 ? null : WheelFit.Group(pages, "Convertir");
+        }
         if (item.Tag is not Slot s) return null;
         switch (s.Type)
         {
+            case SlotType.Converter when _wheel.Files.Count > 0:
+                var conv = ConverterPages(_wheel.Files);
+                return conv.Count == 0 ? null : WheelFit.Group(conv, "Convertir") with { Tag = s };
+            case SlotType.Converter:
+                var recent = new List<WheelItem> { new("conv:pick", "Elegir archivo", "\uE8E5", s.ColorHex, 0, "pick") };
+                recent.AddRange(RecentFiles(23).Select(p => new WheelItem("recent:" + p, Short(Path.GetFileNameWithoutExtension(p), 14), FileGlyph(p), s.ColorHex, 0, new RecentFile(p))));
+                return new WheelPage("Convertir", recent, s);
             case SlotType.WhatsApp when _wa.Status.State == "open" && _waChats.Count > 0:
                 return new WheelPage(s.Name, _waChats.Select(c => new WheelItem("wa:" + c.Jid, Short(c.Name), c.IsGroup ? "\uE716" : "\uE77B", s.ColorHex, c.Unread, c)).ToList(), s);
             case SlotType.Mail when mode == WheelMode.Root && _mail.Accounts.Count > 0:
@@ -438,7 +546,7 @@ public partial class App : Application
 
     private void OnOverflow(WheelItem? parent, IReadOnlyList<WheelItem> rest)
     {
-        if (parent?.Tag is Slot s && _wheel.Mode == WheelMode.Root)
+        if (parent?.Tag is Slot s && _wheel.Mode == WheelMode.Root && s.Type != SlotType.Converter)
         {
             InvokeSlot(s);
             return;
@@ -473,6 +581,13 @@ public partial class App : Application
             case MailSummary m:
                 _wheel.HideAnimated();
                 OpenMail(m);
+                break;
+            case "pick":
+                PickFileForConverter();
+                break;
+            case RecentFile rf:
+                var (rx, ry) = WheelCenter();
+                ShowConverterWheel(rx, ry, [rf.Path]);
                 break;
             case "compose":
                 _wheel.HideAnimated();
@@ -589,8 +704,8 @@ public partial class App : Application
                     ShowWhatsAppPanel(s, files);
                     break;
                 case SlotType.Converter:
-                    OpenConverter();
-                    _converterWindow!.AddFiles(files);
+                    var (cx, cy) = User32.CursorPosition();
+                    ShowConverterWheel(cx, cy, files);
                     break;
             }
         }

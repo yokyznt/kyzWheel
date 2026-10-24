@@ -74,8 +74,8 @@ public static class WheelAnimations
     {
         var ms = Enabled ? 110 : 1;
         var v = V(slice);
-        Scale(v, v.Scale.X == 0 ? 1 : v.Scale.X, on ? 1.035f : 1f, ms);
-        Fade(V(halo), V(halo).Opacity, on ? 0.6f : 0f, ms);
+        Scale(v, v.Scale.X == 0 ? 1 : v.Scale.X, on ? 1.03f : 1f, ms);
+        Fade(V(halo), V(halo).Opacity, on ? 1f : 0f, ms);
         if (!Enabled || double.IsNaN(midDeg)) return;
         var a = midDeg * Math.PI / 180;
         var lift = on ? new Vector3((float)(Math.Sin(a) * 5), (float)(-Math.Cos(a) * 5), 0) : Vector3.Zero;
