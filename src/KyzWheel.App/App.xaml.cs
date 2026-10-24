@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using KyzWheel.App.Converter;
 using KyzWheel.App.Mail;
+using KyzWheel.App.WhatsApp;
 using KyzWheel.Mail;
 using KyzWheel.Platform.Secrets;
 using KyzWheel.App.Settings;
@@ -39,6 +40,7 @@ public partial class App : Application
     private DispatcherQueueTimer? _trimTimer;
     private bool _paused;
     private MailService _mail = null!;
+    private WhatsAppBridge _wa = null!;
     private AddAccountWindow? _addAccount;
 
     public App()
@@ -68,6 +70,13 @@ public partial class App : Application
         _mail = new MailService(new CredentialManagerStore(), _ui);
         _mail.Changed += UpdateBadges;
         _mail.Arrived += OnMailArrived;
+        _wa = new WhatsAppBridge(_ui);
+        _wa.StatusChanged += UpdateBadges;
+        _wa.ChatsChanged += () => _ = RefreshWaUnreadAsync();
+        _wa.MessageArrived += (chat, msg) =>
+        {
+            if (_config.Slots.Any(s => s.Type == SlotType.WhatsApp && s.Notify)) _toasts.Info(chat.Name, msg.Text);
+        };
         _converter = new ConverterController(new ConversionCatalog(ImageConversions.All()), _toasts);
         _toasts.Init();
 
@@ -119,6 +128,8 @@ public partial class App : Application
         _config = cfg;
         _store.Save(cfg);
         _mail.Sync(cfg.MailAccounts ?? []);
+        if (cfg.Slots.Any(s => s.Type == SlotType.WhatsApp)) _wa.Start();
+        else _ = _wa.DisposeAsync().AsTask();
         UpdateBadges();
         UpdateAutostart(cfg.StartWithWindows);
         return errors;
@@ -142,12 +153,39 @@ public partial class App : Application
 
     private WheelItem SlotItem(Slot s) => new("slot:" + s.Id, s.Name, s.Glyph, s.ColorHex, BadgeFor(s), s);
 
-    private int BadgeFor(Slot s) => s.Type == SlotType.Mail ? _mail.Inbox.UnreadCount : 0;
+    private int BadgeFor(Slot s) => s.Type switch
+    {
+        SlotType.Mail => _mail.Inbox.UnreadCount,
+        SlotType.WhatsApp => _wa.Status.Unread,
+        _ => 0,
+    };
+
+    private async Task RefreshWaUnreadAsync()
+    {
+        await _wa.RefreshStatusAsync();
+        UpdateBadges();
+    }
+
+    private void ShowWhatsAppPanel(Slot s, IReadOnlyList<string> files)
+    {
+        var (x, y) = WheelCenter();
+        _wheel.HideAnimated();
+        _panel ??= new SidePanelWindow();
+        if (!_wa.Running && _wa.Status.State != "missing") _wa.Start();
+        var sub = _wa.Status.State == "open" ? (_wa.Status.MeName is { Length: > 0 } n ? n : "Conectado") : "Sin vincular";
+        var logout = Ui.IconButton("\uE8BD", "Desvincular WhatsApp", async () =>
+        {
+            try { await _wa.LogoutAsync(); } catch (WaException) { }
+        });
+        _panel.Show(s.Glyph, s.ColorHex, s.Name, sub, new WhatsAppPanel(_wa, _toasts, files), _wa.Status.State == "open" ? [logout] : [], x, y);
+    }
 
     private void UpdateBadges()
     {
         var unread = _mail.Inbox.UnreadCount;
         foreach (var s in _config.Slots.Where(s => s.Type == SlotType.Mail)) _wheel.SetBadge("slot:" + s.Id, unread);
+        foreach (var s in _config.Slots.Where(s => s.Type == SlotType.WhatsApp)) _wheel.SetBadge("slot:" + s.Id, _wa.Status.Unread);
+        unread += _wa.Status.Unread;
         _tray?.SetTooltip(unread > 0 ? $"kyzWheel · {unread} sin leer" : "kyzWheel");
     }
 
@@ -325,7 +363,7 @@ public partial class App : Application
                     ShowMailPanel(s);
                     break;
                 case SlotType.WhatsApp:
-                    ShowPanel(s, "Aquí verás tus chats y archivos recientes de WhatsApp. Llega en la versión 3.");
+                    ShowWhatsAppPanel(s, []);
                     break;
                 case SlotType.LaunchApp:
                 case SlotType.OpenUrl:
@@ -375,7 +413,7 @@ public partial class App : Application
                     OpenCompose(files, null);
                     break;
                 case SlotType.WhatsApp:
-                    _toasts.Info(s.Name, "Enviar por WhatsApp llega en la versión 3");
+                    ShowWhatsAppPanel(s, files);
                     break;
                 case SlotType.Converter:
                     OpenConverter();
@@ -467,6 +505,7 @@ public partial class App : Application
             _toasts.Dispose();
             _hotkeys?.UnregisterAll();
             _mail.StopAll();
+            _wa.DisposeAsync().AsTask().Wait(3000);
             _input?.Dispose();
             _single?.Dispose();
         }
