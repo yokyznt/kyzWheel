@@ -1,0 +1,23 @@
+{
+  "name": "kyzwheel-wa-sidecar",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "main": "src/main.mjs",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "test": "node --test",
+    "start": "node src/main.mjs",
+    "build": "node build.mjs"
+  },
+  "dependencies": {
+    "baileys": "7.0.0-rc14",
+    "pino": "^10.4.0",
+    "qrcode": "^1.5.4"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.2"
+  }
+}
