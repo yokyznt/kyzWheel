@@ -104,7 +104,8 @@ public partial class App : Application
         _wa.ChatsChanged += () => _ = RefreshWaUnreadAsync();
         _wa.MessageArrived += (chat, msg) =>
         {
-            if (_config.Slots.Any(s => s.Type is SlotType.WhatsApp or SlotType.Messages && s.Notify)) _toasts.Message(chat.IsGroup && !string.IsNullOrEmpty(msg.Sender) ? $"{msg.Sender} · {chat.Name}" : chat.Name, msg.Text, "wa", chat.Jid, true);
+            if (_config.Slots.Any(s => s.Type is SlotType.WhatsApp or SlotType.Messages && s.Notify))
+                Notify("wa", chat.Jid, chat.IsGroup && !string.IsNullOrEmpty(msg.Sender) ? $"{msg.Sender} · {chat.Name}" : chat.Name, msg.Text, "#25D366", "\uE8BD", () => _wa.AvatarAsync(chat.Jid));
         };
         _toasts.Clicked += (kind, id) => _ui.TryEnqueue(() => OpenFromToast(kind, id));
         _toasts.Replied += (kind, id, text) => _ui.TryEnqueue(() => _ = ReplyFromToastAsync(kind, id, text));
@@ -153,6 +154,15 @@ public partial class App : Application
         {
             var p = at.Split(',');
             _wheel.ShowRoot(int.Parse(p[0]), int.Parse(p[1]), RootPage(), Stopwatch.StartNew());
+        }
+        if (Environment.GetCommandLineArgs().Contains("--test-banner"))
+        {
+            BannerWindow.Anchor = (960, -540);
+            var bt = _ui.CreateTimer();
+            bt.Interval = TimeSpan.FromMilliseconds(2500);
+            bt.IsRepeating = false;
+            bt.Tick += (_, _) => Notify("mail", "x|0", "Instagram", "327470 is your Instagram code — Hi, someone tried to sign up", "#EA4335", "\uE715", null, true);
+            bt.Start();
         }
         if (Environment.GetCommandLineArgs().SkipWhile(a => a != "--feed").Skip(1).FirstOrDefault() is { } feed)
         {
@@ -293,6 +303,49 @@ public partial class App : Application
         _tray?.SetTooltip(unread > 0 ? $"kyzWheel · {unread} sin leer" : "kyzWheel");
     }
 
+    private BannerWindow? _banner;
+    private readonly KyzWheel.Core.Notifications.QuietQueue _quiet = new();
+    private Microsoft.UI.Dispatching.DispatcherQueueTimer? _quietTimer;
+
+    private void Notify(string kind, string id, string title, string body, string color, string glyph, Func<Task<string?>>? avatar, bool force = false)
+    {
+        _ui.TryEnqueue(() =>
+        {
+            try
+            {
+                if (!force && Foreground.IsExclusiveFullscreen())
+                {
+                    _quiet.Add(kind, title, body);
+                    if (_quietTimer is null)
+                    {
+                        _quietTimer = _ui.CreateTimer();
+                        _quietTimer.Interval = TimeSpan.FromSeconds(4);
+                        _quietTimer.Tick += (_, _) =>
+                        {
+                            if (Foreground.IsExclusiveFullscreen() || _quiet.Count == 0) return;
+                            var s = _quiet.Drain();
+                            _quietTimer!.Stop();
+                            (_banner ??= new BannerWindow()).Show(new Banner(s.Title, s.Body, "#34D399", "\uE8F2", () => ShowMailOrWaFeed()));
+                        };
+                    }
+                    _quietTimer.Start();
+                    return;
+                }
+                (_banner ??= new BannerWindow()).Show(new Banner(title, body, color, glyph, () => OpenFromToast(kind, id), avatar));
+            }
+            catch (Exception e)
+            {
+                Log.Error(e);
+            }
+        });
+    }
+
+    private void ShowMailOrWaFeed()
+    {
+        if (_wa.Status.State == "open") _ = ShowWaFeedAsync();
+        else ShowMailFeed();
+    }
+
     private void OpenFromToast(string kind, string id)
     {
         try
@@ -332,7 +385,7 @@ public partial class App : Application
     private void OnMailArrived(MailSummary m)
     {
         if (_config.Slots.Any(s => s.Type is SlotType.Mail or SlotType.Messages && s.Notify) && m.Unread)
-            _toasts.Message(m.FromName.Length > 0 ? m.FromName : m.FromAddress, $"{m.Subject}\n{m.Preview}", "mail", $"{m.Account}|{m.Uid}", false);
+            Notify("mail", $"{m.Account}|{m.Uid}", m.FromName.Length > 0 ? m.FromName : m.FromAddress, $"{m.Subject} — {m.Preview}", _mail.AccountOf(m.Account)?.ColorHex ?? "#EA4335", "\uE715", null);
     }
 
     private void ShowMailPanel(Slot s)

@@ -191,4 +191,6 @@ public static class Ui
         byte F(byte v) => (byte)Math.Clamp(k >= 0 ? v + (255 - v) * k : v * (1 + k), 0, 255);
         return ColorHelper.FromArgb(0xFF, F(c.R), F(c.G), F(c.B));
     }
+
+    public static bool ShiftDown() => Microsoft.UI.Input.InputKeyboardSource.GetKeyStateForCurrentThread(Windows.System.VirtualKey.Shift).HasFlag(Windows.UI.Core.CoreVirtualKeyStates.Down);
 }

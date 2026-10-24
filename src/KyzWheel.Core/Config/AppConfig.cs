@@ -10,6 +10,8 @@ public sealed record AppConfig(int Version, string GlobalHotkey, IReadOnlyList<S
 
     public bool MessagesMerged { get; init; }
 
+    public bool ToolsOffered { get; init; }
+
     public string? GoogleClientId { get; init; }
 
     public string? GoogleClientSecret { get; init; }
