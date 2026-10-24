@@ -32,7 +32,8 @@ public sealed class SmtpSender(ISecretStore secrets)
         using var smtp = new SmtpClient { Timeout = 60000 };
         var sec = from.SmtpSecurity == SmtpSecurity.StartTls ? SecureSocketOptions.StartTls : SecureSocketOptions.SslOnConnect;
         await smtp.ConnectAsync(from.SmtpHost, from.SmtpPort, sec, ct);
-        await smtp.AuthenticateAsync(from.Email, password, ct);
+        if (from.Auth == MailAuth.Google) await smtp.AuthenticateAsync(await GoogleOAuth.SaslAsync(from.Email, password, ct), ct);
+        else await smtp.AuthenticateAsync(from.Email, password, ct);
         await smtp.SendAsync(msg, ct);
         await smtp.DisconnectAsync(true, ct);
     }

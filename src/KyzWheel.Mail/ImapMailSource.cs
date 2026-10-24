@@ -58,12 +58,13 @@ public sealed class ImapMailSource(MailAccount account, ISecretStore secrets) : 
                 var password = secrets.Get(ProviderPresets.SecretKey(Account));
                 if (string.IsNullOrEmpty(password))
                 {
-                    w.TryWrite(new StatusChanged(new AccountStatus(Account, AccountState.AuthFailed, "Falta la contraseña de aplicación")));
+                    w.TryWrite(new StatusChanged(new AccountStatus(Account, AccountState.AuthFailed, account.Auth == MailAuth.Google ? "Vuelve a vincular la cuenta de Google" : "Falta la contraseña de aplicación")));
                     return;
                 }
                 var client = new ImapClient { Timeout = 30000 };
                 await client.ConnectAsync(account.ImapHost, account.ImapPort, SecureSocketOptions.SslOnConnect, ct);
-                await client.AuthenticateAsync(Account, password, ct);
+                if (account.Auth == MailAuth.Google) await client.AuthenticateAsync(await GoogleOAuth.SaslAsync(Account, password, ct), ct);
+                else await client.AuthenticateAsync(Account, password, ct);
                 _client = client;
                 var inbox = client.Inbox;
                 await inbox.OpenAsync(FolderAccess.ReadWrite, ct);

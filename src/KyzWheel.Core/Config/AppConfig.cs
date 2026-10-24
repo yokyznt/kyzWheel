@@ -6,6 +6,10 @@ public sealed record AppConfig(int Version, string GlobalHotkey, IReadOnlyList<S
 
     public string ThemeId { get; init; } = KyzWheel.Core.Theming.Themes.DefaultId;
 
+    public string? GoogleClientId { get; init; }
+
+    public string? GoogleClientSecret { get; init; }
+
     public const int MinSlots = 1;
     public const int MaxSlots = 8;
 
@@ -23,7 +27,7 @@ public sealed record AppConfig(int Version, string GlobalHotkey, IReadOnlyList<S
 
     public bool Equals(AppConfig? other) =>
         other is not null && Version == other.Version && GlobalHotkey == other.GlobalHotkey &&
-        AccentHex == other.AccentHex && ThemeId == other.ThemeId && StartWithWindows == other.StartWithWindows && Slots.SequenceEqual(other.Slots) &&
+        AccentHex == other.AccentHex && ThemeId == other.ThemeId && GoogleClientId == other.GoogleClientId && GoogleClientSecret == other.GoogleClientSecret && StartWithWindows == other.StartWithWindows && Slots.SequenceEqual(other.Slots) &&
         (MailAccounts ?? []).SequenceEqual(other.MailAccounts ?? []);
 
     public override int GetHashCode() => HashCode.Combine(Version, GlobalHotkey, AccentHex, StartWithWindows, Slots.Count);
