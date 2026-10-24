@@ -82,8 +82,10 @@ public partial class App : Application
         {
             if (_config.Slots.Any(s => s.Type == SlotType.WhatsApp && s.Notify)) _toasts.Info(chat.Name, msg.Text);
         };
-        _converter = new ConverterController(new ConversionCatalog(ImageConversions.All()), _toasts);
+        _converter = new ConverterController(new ConversionCatalog([.. ImageConversions.All(), .. KyzWheel.Convert.Media.MediaConversions.All(), .. KyzWheel.Convert.Documents.PdfConversions.All()]), _toasts);
         _toasts.Init();
+        KyzWheel.Convert.Documents.PdfConversions.EnsureFonts();
+        KyzWheel.Convert.Media.FfmpegLocator.LocalDir = Path.Combine(Log.Dir, "ffmpeg");
 
         _wheel = new WheelWindow { PagesForFiles = DragPages };
         _wheel.ItemInvoked += OnItemInvoked;

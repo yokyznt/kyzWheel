@@ -23,7 +23,7 @@ public static class ImageConversions
         new MetadataStripper(),
     ];
 
-    internal static bool IsImage(string path) => Readable.Contains(FileGuards.Ext(path));
+    public static bool IsImage(string path) => Readable.Contains(FileGuards.Ext(path));
 
     internal static ConversionResult Result(string src, string output)
         => new(src, output, new FileInfo(src).Length, new FileInfo(output).Length);
