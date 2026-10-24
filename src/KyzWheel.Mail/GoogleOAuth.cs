@@ -21,6 +21,8 @@ public static class GoogleOAuth
     private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(30) };
     private static readonly ConcurrentDictionary<string, (string Token, DateTimeOffset Expires)> Cache = new();
 
+    public const string SecretKey = "kyzWheel:google-client-secret";
+
     public static string? ClientId { get; set; }
     public static string? ClientSecret { get; set; }
     public static bool Configured => !string.IsNullOrWhiteSpace(ClientId) && !string.IsNullOrWhiteSpace(ClientSecret);

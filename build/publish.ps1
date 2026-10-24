@@ -1,4 +1,4 @@
-param([string]$Version = "0.4.6", [switch]$Pack)
+param([string]$Version = "0.4.7", [switch]$Pack)
 $ErrorActionPreference = "Stop"
 $root = Split-Path $PSScriptRoot -Parent
 $out = Join-Path $root "publish"
@@ -7,6 +7,19 @@ $google = Join-Path $root "build\google-oauth.json"
 if (-not (Test-Path $google)) {
   $dl = Get-ChildItem (Join-Path $env:USERPROFILE "Downloads") -Filter "client_secret_*.apps.googleusercontent.com*.json" -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1
   if ($dl) { Copy-Item $dl.FullName $google -Force }
+}
+if (-not (Test-Path $google)) {
+  Add-Type -Namespace Kyz -Name Cred -MemberDefinition @"
+[DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)] public static extern bool CredReadW(string target, int type, int flags, out IntPtr cred);
+[DllImport("advapi32.dll")] public static extern void CredFree(IntPtr cred);
+public static string Read(string target) {
+  IntPtr p; if (!CredReadW(target, 1, 0, out p)) return null;
+  try { int size = Marshal.ReadInt32(p, 32); IntPtr blob = Marshal.ReadIntPtr(p, 40); return size == 0 ? null : Marshal.PtrToStringUni(blob, size / 2); } finally { CredFree(p); }
+}
+"@
+  $sid = [Kyz.Cred]::Read("kyzWheel:google-client-secret:id")
+  $sec = [Kyz.Cred]::Read("kyzWheel:google-client-secret")
+  if ($sid -and $sec) { @{ installed = @{ client_id = $sid; client_secret = $sec } } | ConvertTo-Json | Set-Content $google -Encoding UTF8 }
 }
 if (-not (Test-Path $google)) {
   $cfgPath = Join-Path $env:APPDATA "kyzWheel\config.json"

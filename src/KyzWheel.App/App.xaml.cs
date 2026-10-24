@@ -179,8 +179,9 @@ public partial class App : Application
     private IReadOnlyList<string> ApplyConfig(AppConfig cfg)
     {
         var bundled = BundledGoogleClient();
-        KyzWheel.Mail.GoogleOAuth.ClientId = NonEmpty(cfg.GoogleClientId) ?? Environment.GetEnvironmentVariable("KYZ_GOOGLE_CLIENT_ID") ?? bundled.Id;
-        KyzWheel.Mail.GoogleOAuth.ClientSecret = NonEmpty(cfg.GoogleClientSecret) ?? Environment.GetEnvironmentVariable("KYZ_GOOGLE_CLIENT_SECRET") ?? bundled.Secret;
+        var stored = _mail.Secrets;
+        KyzWheel.Mail.GoogleOAuth.ClientId = NonEmpty(cfg.GoogleClientId) ?? NonEmpty(stored.Get(KyzWheel.Mail.GoogleOAuth.SecretKey + ":id")) ?? Environment.GetEnvironmentVariable("KYZ_GOOGLE_CLIENT_ID") ?? bundled.Id;
+        KyzWheel.Mail.GoogleOAuth.ClientSecret = NonEmpty(cfg.GoogleClientSecret) ?? NonEmpty(stored.Get(KyzWheel.Mail.GoogleOAuth.SecretKey)) ?? Environment.GetEnvironmentVariable("KYZ_GOOGLE_CLIENT_SECRET") ?? bundled.Secret;
         var errors = new List<string>();
         _hotkeys!.UnregisterAll();
         if (Hotkey.TryParse(cfg.GlobalHotkey, out var g) && !_hotkeys.Register("global", g))

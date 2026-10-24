@@ -118,6 +118,8 @@ public sealed class AddAccountWindow : GlassWindow
             }
             GoogleOAuth.ClientId = id;
             GoogleOAuth.ClientSecret = _clientSecret.Password.Trim();
+            secrets.Set(GoogleOAuth.SecretKey, GoogleOAuth.ClientSecret);
+            secrets.Set(GoogleOAuth.SecretKey + ":id", id);
             GoogleClientSaved?.Invoke(id, GoogleOAuth.ClientSecret);
             _googleSetup.Visibility = Visibility.Collapsed;
             _ = GoogleAsync(secrets, existing);
