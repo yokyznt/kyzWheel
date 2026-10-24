@@ -53,14 +53,7 @@ public sealed class Toasts : IDisposable
 
     public void Message(string title, string body, string kind, string id, bool canReply)
     {
-        var b = new ToastContentBuilder().AddArgument("kind", kind).AddArgument("id", id).AddArgument("a", "open").AddText(title).AddText(body);
-        if (canReply)
-        {
-            b.AddInputTextBox("reply", "Responder…");
-            b.AddButton(new ToastButton().SetContent("Enviar").AddArgument("kind", kind).AddArgument("id", id).AddArgument("a", "reply").SetBackgroundActivation());
-        }
-        b.AddButton(new ToastButton().SetContent("Abrir").AddArgument("kind", kind).AddArgument("id", id).AddArgument("a", "open").SetBackgroundActivation());
-        Show(b);
+        Show(new ToastContentBuilder().AddArgument("kind", kind).AddArgument("id", id).AddArgument("a", "open").AddText(title).AddText(body));
     }
 
     public void Info(string title, string body) => Show(new ToastContentBuilder().AddText(title).AddText(body));
