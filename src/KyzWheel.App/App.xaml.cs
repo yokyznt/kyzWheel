@@ -43,6 +43,7 @@ public partial class App : Application
     private MailService _mail = null!;
     private WhatsAppBridge _wa = null!;
     private readonly ClipboardService _clips = new();
+    private IReadOnlyList<KyzWheel.Core.WhatsApp.WaChat> _waChats = [];
     private nint _lastForeground;
     private AddAccountWindow? _addAccount;
 
@@ -80,6 +81,8 @@ public partial class App : Application
         _mail.Arrived += OnMailArrived;
         _clips.Start();
         _wa = new WhatsAppBridge(_ui);
+        _wa.ChatsChanged += () => _ = RefreshWaCacheAsync();
+        _wa.StatusChanged += () => { if (_wa.Status.State == "open") _ = RefreshWaCacheAsync(); };
         _wa.StatusChanged += UpdateBadges;
         _wa.ChatsChanged += () => _ = RefreshWaUnreadAsync();
         _wa.MessageArrived += (chat, msg) =>
@@ -93,6 +96,8 @@ public partial class App : Application
 
         _wheel = new WheelWindow { PagesForFiles = DragPages };
         _wheel.ItemInvoked += OnItemInvoked;
+        _wheel.Expand = ExpandItem;
+        _wheel.Overflow += OnOverflow;
         _wheel.FilesDropped += OnFilesDropped;
         _wheel.FirstFrame += ms => Log.Write("perf.log", $"open {ms:0.0} ms");
         _wheel.Hidden += ScheduleTrim;
@@ -190,7 +195,7 @@ public partial class App : Application
         UpdateBadges();
     }
 
-    private void ShowWhatsAppPanel(Slot s, IReadOnlyList<string> files)
+    private void ShowWhatsAppPanel(Slot s, IReadOnlyList<string> files, KyzWheel.Core.WhatsApp.WaChat? chat = null)
     {
         var (x, y) = WheelCenter();
         _wheel.HideAnimated();
@@ -201,7 +206,7 @@ public partial class App : Application
         {
             try { await _wa.LogoutAsync(); } catch (WaException) { }
         });
-        _panel.Show(s.Glyph, s.ColorHex, s.Name, sub, new WhatsAppPanel(_wa, _toasts, files), _wa.Status.State == "open" ? [logout] : [], x, y);
+        _panel.Show(s.Glyph, s.ColorHex, s.Name, sub, new WhatsAppPanel(_wa, _toasts, files, chat), _wa.Status.State == "open" ? [logout] : [], x, y);
     }
 
     private void UpdateBadges()
@@ -320,6 +325,7 @@ public partial class App : Application
     private void OnHotkey(string id)
     {
         if (_paused) return;
+        if (_wa.Status.State == "open") _ = RefreshWaCacheAsync();
         var sw = Stopwatch.StartNew();
         if (id == "global")
         {
@@ -385,9 +391,97 @@ public partial class App : Application
         }
     }
 
+    private static string Short(string s, int n = 16)
+    {
+        s = s.ReplaceLineEndings(" ").Trim();
+        return s.Length <= n ? s : s[..(n - 1)] + "…";
+    }
+
+    private async Task RefreshWaCacheAsync()
+    {
+        if (_wa.Status.State != "open") return;
+        try
+        {
+            _waChats = await _wa.RecentChatsAsync(24);
+        }
+        catch (Exception e) when (e is WaException or TimeoutException or InvalidOperationException)
+        {
+        }
+    }
+
+    private WheelPage? ExpandItem(WheelItem item, WheelMode mode)
+    {
+        if (item.Tag is not Slot s) return null;
+        switch (s.Type)
+        {
+            case SlotType.WhatsApp when _wa.Status.State == "open" && _waChats.Count > 0:
+                return new WheelPage(s.Name, _waChats.Select(c => new WheelItem("wa:" + c.Jid, Short(c.Name), c.IsGroup ? "\uE716" : "\uE77B", s.ColorHex, c.Unread, c)).ToList(), s);
+            case SlotType.Mail when mode == WheelMode.Root && _mail.Accounts.Count > 0:
+                var mails = _mail.Inbox.Top(24);
+                if (mails.Count == 0) return null;
+                var items = new List<WheelItem> { new("mail:compose", "Redactar", "\uE70F", s.ColorHex, 0, "compose") };
+                items.AddRange(mails.Select(m => new WheelItem("mail:" + m.MessageId, Short(m.FromName.Length > 0 ? m.FromName : m.FromAddress), m.HasAttachments ? "\uE723" : "\uE715", s.ColorHex, m.Unread ? 1 : 0, m)));
+                return new WheelPage(s.Name, items, s);
+            case SlotType.Clipboard when mode == WheelMode.Root:
+                var clips = _clips.History.Items;
+                if (clips.Count == 0) return null;
+                return new WheelPage(s.Name, clips.Select(c => new WheelItem("clip:" + c.Id, Short(c.Preview), c.Kind switch
+                {
+                    KyzWheel.Core.Clipboard.ClipKind.Image => "\uEB9F",
+                    KyzWheel.Core.Clipboard.ClipKind.Files => "\uE8B7",
+                    _ => c.Pinned ? "\uE718" : "\uE8C8",
+                }, s.ColorHex, 0, c)).ToList(), s);
+            default:
+                return null;
+        }
+    }
+
+    private void OnOverflow(WheelItem? parent, IReadOnlyList<WheelItem> rest)
+    {
+        if (parent?.Tag is Slot s && _wheel.Mode == WheelMode.Root)
+        {
+            InvokeSlot(s);
+            return;
+        }
+        var files = _wheel.Files.ToList();
+        var mode = _wheel.Mode;
+        var (x, y) = WheelCenter();
+        _wheel.HideAnimated();
+        _panel ??= new SidePanelWindow();
+        var title = parent?.Label ?? "Más opciones";
+        _panel.Show(parent?.Glyph ?? "\uE712", parent?.ColorHex ?? "#FFFFFF", title, $"{rest.Count} opciones", new ItemListPanel(rest, it =>
+        {
+            _panel.HidePanel();
+            if (mode == WheelMode.Files && files.Count > 0) OnFilesDropped(it, files);
+            else OnItemInvoked(it);
+        }), [], x, y);
+    }
+
+    private Slot? FirstSlot(SlotType t) => _config.Slots.FirstOrDefault(x => x.Type == t);
+
     private void OnItemInvoked(WheelItem item)
     {
-        if (item.Tag is Slot s) InvokeSlot(s);
+        switch (item.Tag)
+        {
+            case Slot s:
+                InvokeSlot(s);
+                break;
+            case KyzWheel.Core.Clipboard.ClipItem c:
+                _wheel.HideAnimated();
+                PasteClip(c);
+                break;
+            case MailSummary m:
+                _wheel.HideAnimated();
+                OpenMail(m);
+                break;
+            case "compose":
+                _wheel.HideAnimated();
+                OpenCompose([], null);
+                break;
+            case KyzWheel.Core.WhatsApp.WaChat chat when FirstSlot(SlotType.WhatsApp) is { } ws:
+                ShowWhatsAppPanel(ws, [], chat);
+                break;
+        }
     }
 
     private void OnFilesDropped(WheelItem item, IReadOnlyList<string> files)
@@ -400,6 +494,9 @@ public partial class App : Application
                 break;
             case Slot s:
                 DropOnSlot(s, files);
+                break;
+            case KyzWheel.Core.WhatsApp.WaChat chat:
+                _ = SendToChatAsync(chat, files);
                 break;
         }
     }
@@ -444,6 +541,24 @@ public partial class App : Application
         _wheel.HideAnimated();
         _panel ??= new SidePanelWindow();
         _panel.Show(s.Glyph, s.ColorHex, s.Name, "Próximamente", MailPanel.Empty(s.Glyph, "En camino", text, null, null), [], x, y);
+    }
+
+    private async Task SendToChatAsync(KyzWheel.Core.WhatsApp.WaChat chat, IReadOnlyList<string> files)
+    {
+        var ok = 0;
+        foreach (var f in files)
+        {
+            try
+            {
+                await _wa.SendFileAsync(chat.Jid, f);
+                ok++;
+            }
+            catch (Exception e) when (e is WaException or TimeoutException or InvalidOperationException)
+            {
+                _toasts.Info(chat.Name, $"No se pudo enviar {Path.GetFileName(f)}: {e.Message}");
+            }
+        }
+        if (ok > 0) _toasts.Info(chat.Name, ok == 1 ? $"Enviado {Path.GetFileName(files[0])}" : $"Enviados {ok} archivos");
     }
 
     private void DropOnSlot(Slot s, IReadOnlyList<string> files)

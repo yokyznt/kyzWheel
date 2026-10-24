@@ -49,6 +49,12 @@ public sealed partial class WheelWindow : Window
     public event Action? Hidden;
 
     public Func<IReadOnlyList<string>, IReadOnlyList<WheelPage>>? PagesForFiles { get; set; }
+    public Func<WheelItem, WheelMode, WheelPage?>? Expand { get; set; }
+    public event Action<WheelItem?, IReadOnlyList<WheelItem>>? Overflow;
+    public IReadOnlyList<string> Files => _dragFiles;
+    private readonly Stack<(IReadOnlyList<WheelPage> Pages, int Page, WheelItem? Parent)> _stack = new();
+    private WheelItem? _parent;
+    public int Depth => _stack.Count;
 
     public bool IsShown => _shown;
 
@@ -80,7 +86,7 @@ public sealed partial class WheelWindow : Window
             if (e.GetCurrentPoint(Root).Properties.IsRightButtonPressed)
             {
                 e.Handled = true;
-                HideAnimated();
+                if (!Back()) HideAnimated();
             }
         };
         _lockTimer = DispatcherQueue.CreateTimer();
@@ -132,7 +138,8 @@ public sealed partial class WheelWindow : Window
         ClearHubFile();
         _dragFiles = [];
         _mode = WheelMode.Root;
-        _pages = [page];
+        ResetStack();
+        _pages = [WheelFit.Fit(page, "#FFFFFF")];
         _page = 0;
         Present(x, y, true, perf);
     }
@@ -141,7 +148,8 @@ public sealed partial class WheelWindow : Window
     {
         _mode = WheelMode.Files;
         _dragFiles = files;
-        _pages = pages.Count > 0 ? pages : [new WheelPage("Sin acciones", [])];
+        ResetStack();
+        _pages = pages.Count > 0 ? [WheelFit.Fit(WheelFit.Group(pages, "Acciones"), "#FFFFFF")] : [new WheelPage("Sin acciones", [])];
         _page = 0;
         _hubDefault = files.Count == 1 ? System.IO.Path.GetFileName(files[0]) : $"{files.Count} archivos";
         SetHubFile(files);
@@ -184,6 +192,7 @@ public sealed partial class WheelWindow : Window
         _wantTools = tools;
         _dropped = false;
         _dragFiles = [];
+        ResetStack();
         _pages = [new WheelPage("Suelta aquí", [])];
         _page = 0;
         Present(x, y, false, perf);
@@ -268,6 +277,38 @@ public sealed partial class WheelWindow : Window
         t.Start();
     }
 
+    private void ResetStack()
+    {
+        _stack.Clear();
+        _parent = null;
+    }
+
+    public void Push(WheelPage page, WheelItem parent)
+    {
+        _stack.Push((_pages, _page, _parent));
+        _parent = parent;
+        _pages = [WheelFit.Fit(page, parent.ColorHex)];
+        _page = 0;
+        SetHover(-1);
+        BuildPage(0);
+        WheelAnimations.Drill(Layer, true);
+        WheelAnimations.Drill(HubTitle, true);
+    }
+
+    public bool Back()
+    {
+        if (_stack.Count == 0) return false;
+        var (pages, page, parent) = _stack.Pop();
+        _pages = pages;
+        _page = page;
+        _parent = parent;
+        SetHover(-1);
+        BuildPage(_page);
+        WheelAnimations.Drill(Layer, false);
+        WheelAnimations.Drill(HubTitle, false);
+        return true;
+    }
+
     public void NextPage() => SwitchPage(_page + 1, 1);
     public void PrevPage() => SwitchPage(_page - 1, -1);
 
@@ -348,10 +389,12 @@ public sealed partial class WheelWindow : Window
         HubTitle.Text = _hubDefault ?? page.Title;
         HubSub.Text = _mode switch
         {
-            WheelMode.Files => (_pages.Count > 1 ? page.Title + " · TAB" : page.Title).ToUpperInvariant(),
             WheelMode.Drag => n == 0 ? "" : _pages.Count > 1 ? "SHIFT · TAB CAMBIA" : "SUELTA EN UNA ACCIÓN",
-            _ => "ESC PARA CERRAR",
+            _ when _stack.Count > 0 => (_mode == WheelMode.Files ? page.Title + " · " : "") + "CLIC DER. ATRÁS",
+            WheelMode.Files => "ELIGE · CLIC DER. SALE",
+            _ => "CLIC DER. CIERRA",
         };
+        HubSub.Text = HubSub.Text.ToUpperInvariant();
         Dots.Children.Clear();
         if (_pages.Count > 1)
             for (var i = 0; i < _pages.Count; i++)
@@ -489,6 +532,22 @@ public sealed partial class WheelWindow : Window
 
     private void Choose(int idx)
     {
+        if (idx >= 0 && _slices[idx].Item.Tag is MoreItems more)
+        {
+            WheelAnimations.Success(_slices[idx].Group);
+            Overflow?.Invoke(_parent, more.Items);
+            return;
+        }
+        if (idx >= 0 && _mode != WheelMode.Drag)
+        {
+            var it = _slices[idx].Item;
+            var sub = it.Children is { Count: > 0 } kids ? new WheelPage(it.Label, kids, it.Tag) : Expand?.Invoke(it, _mode);
+            if (sub is { Items.Count: > 0 })
+            {
+                Push(sub, it);
+                return;
+            }
+        }
         if (idx >= 0)
         {
             var item = _slices[idx].Item;
@@ -513,7 +572,8 @@ public sealed partial class WheelWindow : Window
         switch (e.Key)
         {
             case Windows.System.VirtualKey.Escape:
-                HideAnimated();
+            case Windows.System.VirtualKey.Back:
+                if (!Back()) HideAnimated();
                 e.Handled = true;
                 break;
             case Windows.System.VirtualKey.Tab:

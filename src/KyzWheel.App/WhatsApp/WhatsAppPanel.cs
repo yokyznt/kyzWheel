@@ -26,9 +26,11 @@ public sealed class WhatsAppPanel : Grid
     private WaChat? _open;
     private int _version;
 
-    public WhatsAppPanel(WhatsAppBridge wa, Toasts toasts, IReadOnlyList<string> pendingFiles)
+    public WhatsAppPanel(WhatsAppBridge wa, Toasts toasts, IReadOnlyList<string> pendingFiles, WaChat? openChat = null)
     {
         _wa = wa;
+        _open = openChat;
+        if (openChat is not null) _ = wa.MarkReadAsync(openChat.Jid).ContinueWith(_ => { }, TaskScheduler.Default);
         _toasts = toasts;
         _pendingFiles = pendingFiles;
         _note = Ui.Label("", 11.5, Ui.Tertiary);

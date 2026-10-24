@@ -110,6 +110,21 @@ public static class WheelAnimations
         v.StartAnimation("RotationAngleInDegrees", spring);
     }
 
+    public static void Drill(UIElement layer, bool inward)
+    {
+        var v = V(layer);
+        if (layer is FrameworkElement fe && layer is not Microsoft.UI.Xaml.Controls.Canvas) v.CenterPoint = new Vector3((float)fe.ActualWidth / 2, (float)fe.ActualHeight / 2, 0);
+        Fade(v, 0, 1, Enabled ? 190 : 80);
+        if (!Enabled) return;
+        Scale(v, inward ? 0.84f : 1.14f, 1f, 220);
+        var c = v.Compositor;
+        var r = c.CreateScalarKeyFrameAnimation();
+        r.InsertKeyFrame(0f, inward ? -8f : 8f);
+        r.InsertKeyFrame(1f, 0f, Ease(c));
+        r.Duration = TimeSpan.FromMilliseconds(220);
+        if (layer is Microsoft.UI.Xaml.Controls.Canvas) v.StartAnimation("RotationAngleInDegrees", r);
+    }
+
     public static void Crossfade(UIElement root)
     {
         var v = V(root);
