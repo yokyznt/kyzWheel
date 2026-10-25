@@ -46,6 +46,7 @@ public partial class App : Application
     private readonly KyzWheel.App.Phone.PhoneService _phone = new();
     private Microsoft.UI.Dispatching.DispatcherQueueTimer? _rehook;
     private IReadOnlyList<KyzWheel.Core.WhatsApp.WaChat> _waChats = [];
+    private IReadOnlyList<KyzWheel.Core.WhatsApp.WaContact> _waContacts = [];
     private nint _lastForeground;
     private AddAccountWindow? _addAccount;
 
@@ -125,6 +126,7 @@ public partial class App : Application
             if (_config.Slots.Any(s => s.Type is SlotType.WhatsApp or SlotType.Messages && s.Notify))
                 Notify("wa", chat.Jid, chat.IsGroup && !string.IsNullOrEmpty(msg.Sender) ? $"{msg.Sender} · {chat.Name}" : chat.Name, msg.Text, "#25D366", "\uE8BD", () => _wa.AvatarAsync(chat.Jid), reply: text => _wa.SendTextAsync(chat.Jid, text));
         };
+        Toasts.Override = (title, body) => Notify("info", "", title, body, "#7DD3FC", "\uE946", null, true);
         _toasts.Clicked += (kind, id) => _ui.TryEnqueue(() => OpenFromToast(kind, id));
         _toasts.Replied += (kind, id, text) => _ui.TryEnqueue(() => _ = ReplyFromToastAsync(kind, id, text));
         _converter = new ConverterController(new ConversionCatalog([.. ImageConversions.All(), .. KyzWheel.Convert.Media.MediaConversions.All(), .. KyzWheel.Convert.Documents.PdfConversions.All()]), _toasts);
@@ -149,8 +151,16 @@ public partial class App : Application
             if (e.Reason is Microsoft.Win32.SessionSwitchReason.SessionUnlock or Microsoft.Win32.SessionSwitchReason.ConsoleConnect) _ui.TryEnqueue(() => { _input?.Rehook(); ApplyConfig(_config); });
         };
         _wheel.FilesDropped += OnFilesDropped;
-        _wheel.Reordered += items =>
+        _wheel.Reordered += (items, parent) =>
         {
+            if (parent is Slot ps)
+            {
+                if (!CustomizableSubs.Contains(ps.Type)) return;
+                var sub = new Dictionary<string, IReadOnlyList<string>>(_config.SubOrder) { [ps.Id] = items.Select(i => i.Id).ToList() };
+                _config = _config with { SubOrder = sub };
+                _store.Save(_config);
+                return;
+            }
             var order = items.Select(i => i.Tag).OfType<Slot>().Select(x => x.Id).ToList();
             if (order.Count != _config.Slots.Count) return;
             var slots = order.Select(id => _config.Slots.First(x => x.Id == id)).ToList();
@@ -880,13 +890,49 @@ public partial class App : Application
         try
         {
             _waChats = await _wa.RecentChatsAsync(24);
+            _waContacts = await _wa.SearchAsync("", 5000);
         }
         catch (Exception e) when (e is WaException or TimeoutException or InvalidOperationException)
         {
         }
     }
 
+    private IReadOnlyList<WheelItem> PhoneItems(Slot s) =>
+    [
+                    new("phone:recv", "Recibidos", "\uE896", s.ColorHex, 0, "phone:recv"),
+                    new("phone:guide", "Vincular", "\uE71B", s.ColorHex, 0, "phone:guide"),
+                    new("phone:clip", "Portapapeles", "\uE77F", s.ColorHex, 0, "phone:clip"),
+                    new("phone:file", "Archivo", "\uE8E5", s.ColorHex, 0, "phone:file"),
+                    new("phone:shot", "Última captura", "\uE722", s.ColorHex, 0, "phone:shot"),
+                    new("phone:ring", "Sonar", "\uEA8F", s.ColorHex, 0, "phone:ring"),
+                    new("phone:ping", "Avisar", "\uE7E7", s.ColorHex, 0, "phone:ping"),
+                ];
+
+    public static readonly SlotType[] CustomizableSubs = [SlotType.Phone, SlotType.Capture, SlotType.Music, SlotType.Messages];
+
+    private WheelPage? Customize(WheelPage? page, Slot s)
+    {
+        if (page is null || !CustomizableSubs.Contains(s.Type)) return page;
+        var hidden = _config.SubHidden.TryGetValue(s.Id, out var h) ? h.ToHashSet() : [];
+        var order = _config.SubOrder.TryGetValue(s.Id, out var o) ? o.ToList() : [];
+        var items = page.Items.Where(i => !hidden.Contains(i.Id)).Select((i, n) => (i, n)).OrderBy(x => order.IndexOf(x.i.Id) is var k && k >= 0 ? k : 1000 + x.n).Select(x => x.i).ToList();
+        return page with { Items = items };
+    }
+
+    public IReadOnlyList<(string Id, string Label, string Glyph)> SubCatalog(Slot s)
+    {
+        if (!CustomizableSubs.Contains(s.Type)) return [];
+        var raw = s.Type == SlotType.Phone ? PhoneItems(s) : SubPageRaw(new WheelItem("slot:" + s.Id, s.Name, s.Glyph, s.ColorHex, 0, s), WheelMode.Root)?.Items ?? [];
+        return raw.Select(i => (i.Id, i.Label, i.Glyph)).ToList();
+    }
+
     private WheelPage? ExpandItem(WheelItem item, WheelMode mode)
+    {
+        var page = SubPageRaw(item, mode);
+        return item.Tag is Slot s && mode == WheelMode.Root ? Customize(page, s) : page;
+    }
+
+    private WheelPage? SubPageRaw(WheelItem item, WheelMode mode)
     {
         if (item.Tag is "phone:clip")
         {
@@ -919,7 +965,15 @@ public partial class App : Application
                 recent.AddRange(RecentFiles(23).Select(p => new WheelItem("recent:" + p, Short(Path.GetFileNameWithoutExtension(p), 14), FileGlyph(p), s.ColorHex, 0, new RecentFile(p))));
                 return new WheelPage("Convertir", recent, s);
             case SlotType.WhatsApp when _wa.Status.State == "open" && _waChats.Count > 0:
-                return new WheelPage(s.Name, _waChats.Select(c => new WheelItem("wa:" + c.Jid, Short(c.Name), c.IsGroup ? "\uE716" : "\uE77B", s.ColorHex, c.Unread, c)).ToList(), s);
+                {
+                    var waItems = _waChats.Select(c => new WheelItem("wa:" + c.Jid, Short(c.Name), c.IsGroup ? "\uE716" : "\uE77B", s.ColorHex, c.Unread, c)).ToList();
+                    if (_wheel.Files.Count > 0)
+                    {
+                        var known = waItems.Select(i => i.Id).ToHashSet();
+                        waItems.AddRange(_waContacts.Where(c => known.Add("wa:" + c.Jid)).Select(c => new WheelItem("wa:" + c.Jid, Short(c.Name), c.Jid.EndsWith("@g.us") ? "\uE716" : "\uE77B", s.ColorHex, 0, new KyzWheel.Core.WhatsApp.WaChat(c.Jid, c.Name, "", DateTimeOffset.MinValue, 0, c.Jid.EndsWith("@g.us")))));
+                    }
+                    return new WheelPage(s.Name, waItems, s);
+                }
             case SlotType.Mail when mode == WheelMode.Root && _mail.Accounts.Count > 0:
                 var mails = _mail.Inbox.Top(24);
                 if (mails.Count == 0) return null;
@@ -953,18 +1007,12 @@ public partial class App : Application
                     new("music:prev", "Anterior", "\uE892", s.ColorHex, 0, "music:prev"),
                     new("music:toggle", _media.Playing ? "Pausa" : "Reproducir", _media.Playing ? "\uE769" : "\uE768", s.ColorHex, 0, "music:toggle"),
                     new("music:next", "Siguiente", "\uE893", s.ColorHex, 0, "music:next"),
+                    new("music:volup", "Subir volumen", "\uE995", s.ColorHex, 0, "music:volup"),
+                    new("music:voldown", "Bajar volumen", "\uE993", s.ColorHex, 0, "music:voldown"),
+                    new("music:mute", "Silenciar", "\uE74F", s.ColorHex, 0, "music:mute"),
                 ], s);
             case SlotType.Phone when mode == WheelMode.Root && _phone.Installed:
-                return new WheelPage(s.Name,
-                [
-                    new("phone:recv", "Recibidos", "\uE896", s.ColorHex, 0, "phone:recv"),
-                    new("phone:guide", "Vincular", "\uE71B", s.ColorHex, 0, "phone:guide"),
-                    new("phone:clip", "Portapapeles", "\uE77F", s.ColorHex, 0, "phone:clip"),
-                    new("phone:file", "Archivo", "\uE8E5", s.ColorHex, 0, "phone:file"),
-                    new("phone:shot", "Última captura", "\uE722", s.ColorHex, 0, "phone:shot"),
-                    new("phone:ring", "Sonar", "\uEA8F", s.ColorHex, 0, "phone:ring"),
-                    new("phone:ping", "Avisar", "\uE7E7", s.ColorHex, 0, "phone:ping"),
-                ], s);
+                return new WheelPage(s.Name, PhoneItems(s), s);
             case SlotType.Clipboard when mode == WheelMode.Root:
                 var clips = _clips.History.Items;
                 if (clips.Count == 0) return null;
@@ -1248,6 +1296,17 @@ public partial class App : Application
             case "music:toggle":
                 _ = MusicAsync(() => _media.ToggleAsync());
                 break;
+            case "music:volup":
+                KyzWheel.Platform.Native.Keys.Chord(0xAF);
+                KyzWheel.Platform.Native.Keys.Chord(0xAF);
+                break;
+            case "music:voldown":
+                KyzWheel.Platform.Native.Keys.Chord(0xAE);
+                KyzWheel.Platform.Native.Keys.Chord(0xAE);
+                break;
+            case "music:mute":
+                KyzWheel.Platform.Native.Keys.Chord(0xAD);
+                break;
             case "music:next":
                 _ = MusicAsync(() => _media.NextAsync());
                 break;
@@ -1396,6 +1455,8 @@ public partial class App : Application
 
     private async Task SendToChatAsync(KyzWheel.Core.WhatsApp.WaChat chat, IReadOnlyList<string> files)
     {
+        var total = files.Sum(f => File.Exists(f) ? new FileInfo(f).Length : 0);
+        if (total > 8 * 1024 * 1024) Notify("send", "", "Enviando a " + chat.Name, (files.Count == 1 ? Path.GetFileName(files[0]) : $"{files.Count} archivos") + $" · {total / 1048576.0:0} MB, puede tardar un poco", "#25D366", "\uE724", null, true);
         var ok = 0;
         foreach (var f in files)
         {
@@ -1409,7 +1470,7 @@ public partial class App : Application
                 _toasts.Info(chat.Name, $"No se pudo enviar {Path.GetFileName(f)}: {e.Message}");
             }
         }
-        if (ok > 0) _toasts.Info(chat.Name, ok == 1 ? $"Enviado {Path.GetFileName(files[0])}" : $"Enviados {ok} archivos");
+        if (ok > 0) Notify("send", "", "Enviado a " + chat.Name, ok == 1 ? Path.GetFileName(files[0]) : $"{ok} archivos", "#25D366", "\uE73E", () => _wa.AvatarAsync(chat.Jid), true);
     }
 
     private void DropOnSlot(Slot s, IReadOnlyList<string> files)
@@ -1477,13 +1538,14 @@ public partial class App : Application
                 },
                 AccountRemoved = a => _mail.Secrets.Remove(ProviderPresets.SecretKey(a.Email)),
             };
+            _settings.SetSubCatalog(SubCatalog);
             _settings.TestNotification += (mon, pos) =>
             {
                 var (om, op) = (BannerWindow.Monitor, BannerWindow.Position);
                 BannerWindow.Monitor = mon;
                 BannerWindow.Position = pos;
                 _banner?.Hide();
-                (_banner ??= new BannerWindow()).Show(new Banner("Así se verán tus avisos", "Toca para abrir · el botón ↩ responde sin abrir nada", "#25D366", "\uE8BD", null, null, _ => Task.CompletedTask));
+                (_banner ??= new BannerWindow()).Show(new Banner("Aviso de prueba", "Aquí saldrán tus avisos de WhatsApp y correo", "#25D366", "\uE8BD", null, null, _ => Task.CompletedTask));
                 BannerWindow.Monitor = om;
                 BannerWindow.Position = op;
             };

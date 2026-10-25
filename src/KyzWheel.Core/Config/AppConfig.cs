@@ -14,9 +14,20 @@ public sealed record AppConfig(int Version, string GlobalHotkey, IReadOnlyList<S
 
     public bool Welcomed { get; init; }
 
-    public string NotifyMonitor { get; init; } = "cursor";
+    private readonly string? _notifyMonitor;
+    private readonly string? _notifyPosition;
 
-    public string NotifyPosition { get; init; } = "top-center";
+    public string NotifyMonitor { get => string.IsNullOrEmpty(_notifyMonitor) ? "cursor" : _notifyMonitor; init => _notifyMonitor = value; }
+
+    public string NotifyPosition { get => string.IsNullOrEmpty(_notifyPosition) ? "top-center" : _notifyPosition; init => _notifyPosition = value; }
+
+    private static readonly IReadOnlyDictionary<string, IReadOnlyList<string>> NoSubs = new Dictionary<string, IReadOnlyList<string>>();
+    private readonly IReadOnlyDictionary<string, IReadOnlyList<string>>? _subOrder;
+    private readonly IReadOnlyDictionary<string, IReadOnlyList<string>>? _subHidden;
+
+    public IReadOnlyDictionary<string, IReadOnlyList<string>> SubOrder { get => _subOrder ?? NoSubs; init => _subOrder = value; }
+
+    public IReadOnlyDictionary<string, IReadOnlyList<string>> SubHidden { get => _subHidden ?? NoSubs; init => _subHidden = value; }
 
     public string? GoogleClientId { get; init; }
 

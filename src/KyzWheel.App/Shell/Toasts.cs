@@ -56,7 +56,17 @@ public sealed class Toasts : IDisposable
         Show(new ToastContentBuilder().AddArgument("kind", kind).AddArgument("id", id).AddArgument("a", "open").AddText(title).AddText(body));
     }
 
-    public void Info(string title, string body) => Show(new ToastContentBuilder().AddText(title).AddText(body));
+    public static Action<string, string>? Override { get; set; }
+
+    public void Info(string title, string body)
+    {
+        if (Override is { } o)
+        {
+            o(title, body);
+            return;
+        }
+        Show(new ToastContentBuilder().AddText(title).AddText(body));
+    }
 
     public void Result(string title, string body, IReadOnlyList<string> outputs)
     {

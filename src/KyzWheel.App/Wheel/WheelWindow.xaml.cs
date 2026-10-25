@@ -55,7 +55,7 @@ public sealed partial class WheelWindow : Window
     private Stopwatch? _perf;
 
     public event Action<WheelItem>? ItemInvoked;
-    public event Action<IReadOnlyList<WheelItem>>? Reordered;
+    public event Action<IReadOnlyList<WheelItem>, object?>? Reordered;
     public event Action<WheelItem, IReadOnlyList<string>>? FilesDropped;
     public event Action<double>? FirstFrame;
     public event Action? Hidden;
@@ -400,7 +400,7 @@ public sealed partial class WheelWindow : Window
 
     private void ToggleEdit()
     {
-        if (!_editing && (_stack.Count > 0 || _mode != WheelMode.Root || _pages.Count != 1 || _slices.Count < 2)) return;
+        if (!_editing && (_stack.Count > 1 || (_stack.Count == 1 && _parent?.Tag is not KyzWheel.Core.Config.Slot) || _mode != WheelMode.Root || _pages.Count != 1 || _slices.Count < 2 || _slices.Any(x => x.Item.Tag is MoreItems))) return;
         _editing = !_editing;
         _editPick = -1;
         HintTopIcon.Glyph = _editing ? "\uE73E" : "\uE70F";
@@ -436,7 +436,7 @@ public sealed partial class WheelWindow : Window
         HubTitle.FontFamily = KyzWheel.App.Shell.Ui.Icons;
         HubSub.Text = "";
         WheelAnimations.Success(_slices[idx].Group);
-        Reordered?.Invoke(items);
+        Reordered?.Invoke(items, _stack.Count == 0 ? null : _parent?.Tag);
     }
 
     public bool Back()

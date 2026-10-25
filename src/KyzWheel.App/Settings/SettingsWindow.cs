@@ -52,6 +52,68 @@ public sealed class SettingsWindow : GlassWindow
     private readonly ComboBox _notifyMonitor = new() { Header = "Pantalla", MinWidth = 260 };
     private readonly ComboBox _notifyPos = new() { Header = "Lugar", MinWidth = 200 };
     public event Action<string, string>? TestNotification;
+    private readonly StackPanel _subs = new() { Spacing = 10 };
+    private readonly Dictionary<string, IReadOnlyList<string>> _subOrder = new();
+    private readonly Dictionary<string, IReadOnlyList<string>> _subHidden = new();
+    private Func<Slot, IReadOnlyList<(string Id, string Label, string Glyph)>>? _catalog;
+
+    public void SetSubCatalog(Func<Slot, IReadOnlyList<(string Id, string Label, string Glyph)>> catalog)
+    {
+        _catalog = catalog;
+        foreach (var (k, v) in _base.SubOrder) _subOrder[k] = v;
+        foreach (var (k, v) in _base.SubHidden) _subHidden[k] = v;
+        RenderSubs();
+    }
+
+    private void RenderSubs()
+    {
+        _subs.Children.Clear();
+        if (_catalog is null) return;
+        foreach (var slot in _base.Slots)
+        {
+            var items = _catalog(slot);
+            if (items.Count == 0) continue;
+            var order = _subOrder.TryGetValue(slot.Id, out var o) ? o.ToList() : [];
+            var hidden = _subHidden.TryGetValue(slot.Id, out var h) ? h.ToHashSet() : [];
+            var sorted = items.Select((it, n) => (it, n)).OrderBy(x => order.IndexOf(x.it.Id) is var k && k >= 0 ? k : 1000 + x.n).Select(x => x.it).ToList();
+            var list = new StackPanel { Spacing = 4 };
+            for (var i = 0; i < sorted.Count; i++)
+            {
+                var it = sorted[i];
+                var idx = i;
+                var row = new Grid { ColumnSpacing = 8 };
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+                var check = new CheckBox { IsChecked = !hidden.Contains(it.Id), MinWidth = 0, Content = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children = { new FontIcon { Glyph = it.Glyph, FontSize = 14 }, new TextBlock { Text = it.Label } } } };
+                check.Checked += (_, _) => { _subHidden[slot.Id] = (_subHidden.TryGetValue(slot.Id, out var hh) ? hh : []).Where(x => x != it.Id).ToList(); };
+                check.Unchecked += (_, _) => { _subHidden[slot.Id] = (_subHidden.TryGetValue(slot.Id, out var hh) ? hh : []).Append(it.Id).Distinct().ToList(); };
+                Grid.SetColumnSpan(check, 2);
+                row.Children.Add(check);
+                Button Arrow(string glyph, int delta)
+                {
+                    var b = new Button { Content = new FontIcon { Glyph = glyph, FontSize = 12 }, Padding = new Thickness(8, 4, 8, 4), IsEnabled = idx + delta >= 0 && idx + delta < sorted.Count };
+                    b.Click += (_, _) =>
+                    {
+                        var ids = sorted.Select(x => x.Id).ToList();
+                        (ids[idx], ids[idx + delta]) = (ids[idx + delta], ids[idx]);
+                        _subOrder[slot.Id] = ids;
+                        RenderSubs();
+                    };
+                    return b;
+                }
+                var up = Arrow("\uE70E", -1);
+                Grid.SetColumn(up, 2);
+                row.Children.Add(up);
+                var down = Arrow("\uE70D", 1);
+                Grid.SetColumn(down, 3);
+                row.Children.Add(down);
+                list.Children.Add(row);
+            }
+            _subs.Children.Add(new Expander { Header = slot.Name, Content = list, HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Stretch });
+        }
+    }
     private readonly GridView _themes = new() { SelectionMode = ListViewSelectionMode.Single, IsItemClickEnabled = true };
     private readonly StackPanel _accountList = new() { Spacing = 6 };
 
@@ -143,9 +205,9 @@ public sealed class SettingsWindow : GlassWindow
         var notifyRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 12 };
         notifyRow.Children.Add(_notifyMonitor);
         notifyRow.Children.Add(_notifyPos);
-        var test = new Button { Content = "Probar", VerticalAlignment = VerticalAlignment.Bottom };
-        test.Click += (_, _) => TestNotification?.Invoke((_notifyMonitor.SelectedItem as ComboBoxItem)?.Tag as string ?? "cursor", (_notifyPos.SelectedItem as ComboBoxItem)?.Tag as string ?? "top-center");
-        notifyRow.Children.Add(test);
+        void Preview(object? _, SelectionChangedEventArgs __) => TestNotification?.Invoke((_notifyMonitor.SelectedItem as ComboBoxItem)?.Tag as string ?? "cursor", (_notifyPos.SelectedItem as ComboBoxItem)?.Tag as string ?? "top-center");
+        _notifyMonitor.SelectionChanged += Preview;
+        _notifyPos.SelectionChanged += Preview;
         root.Children.Add(Card(Stack(Heading("Notificaciones", 15), Muted("Dónde aparecen los avisos de WhatsApp y correo."), notifyRow)));
         root.Children.Add(Card(Stack(Heading("Atajo global", 15), Muted("Abre la rueda donde esté el cursor."), _global)));
         var listButtons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
@@ -175,6 +237,7 @@ public sealed class SettingsWindow : GlassWindow
             Save();
         });
         root.Children.Add(Card(Stack(Heading("Cuentas de correo", 15), Muted("Los correos recientes de todas aparecen juntos en la sección Correo."), _accountList, addAccount)));
+        root.Children.Add(Card(Stack(Heading("Opciones de cada sección", 15), Muted("Activa, quita o cambia el orden de lo que sale dentro de cada sección. También puedes ordenar con clic de la rueda del mouse sobre la rueda."), _subs)));
         root.Children.Add(Card(Stack(Heading("General", 15), _autostart)));
         var footer = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 12 };
         footer.Children.Add(save);
@@ -427,6 +490,8 @@ public sealed class SettingsWindow : GlassWindow
             ThemeId = _themeId,
             NotifyMonitor = (_notifyMonitor.SelectedItem as ComboBoxItem)?.Tag as string ?? "cursor",
             NotifyPosition = (_notifyPos.SelectedItem as ComboBoxItem)?.Tag as string ?? "top-center",
+            SubOrder = _catalog is null ? _base.SubOrder : new Dictionary<string, IReadOnlyList<string>>(_subOrder),
+            SubHidden = _catalog is null ? _base.SubHidden : new Dictionary<string, IReadOnlyList<string>>(_subHidden),
         };
         var errors = ConfigStore.Validate(cfg);
         if (errors.Count == 0) errors = _apply(cfg);

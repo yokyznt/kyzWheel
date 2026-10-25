@@ -192,12 +192,16 @@ public sealed class WhatsAppBridge(DispatcherQueue ui) : IAsyncDisposable
     public async Task<IReadOnlyList<WaFile>> RecentFilesAsync(int limit = 8)
         => WaJson.List(await CallAsync("files.recent", new { limit }), e => WaJson.File(e));
 
-    public async Task<IReadOnlyList<WaContact>> SearchAsync(string q)
-        => WaJson.List(await CallAsync("contacts.search", new { q }), e => new WaContact(e.GetProperty("jid").GetString()!, e.GetProperty("name").GetString()!));
+    public async Task<IReadOnlyList<WaContact>> SearchAsync(string q, int limit = 12)
+        => WaJson.List(await CallAsync("contacts.search", new { q, limit }), e => new WaContact(e.GetProperty("jid").GetString()!, e.GetProperty("name").GetString()!));
 
     public Task SendTextAsync(string jid, string text) => CallAsync("messages.send", new { jid, text });
 
-    public Task SendFileAsync(string jid, string path) => CallAsync("files.send", new { jid, path }, 300000);
+    public Task SendFileAsync(string jid, string path)
+    {
+        var size = new FileInfo(path).Length;
+        return CallAsync("files.send", new { jid, path }, (int)Math.Min(int.MaxValue, 300000 + size / 100));
+    }
 
     public async Task<string> DownloadAsync(WaFile f) => (await CallAsync("media.download", new { jid = f.Jid, messageId = f.MessageId }, 300000)).GetProperty("path").GetString()!;
 

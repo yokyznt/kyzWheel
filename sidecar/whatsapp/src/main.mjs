@@ -31,7 +31,7 @@ const dispatch = createDispatcher({
   'media.cache': (p) => conn.media(p),
   'avatar.get': (p) => conn.avatar(p),
   'chats.read': (p) => conn.markRead(p),
-  'contacts.search': async ({ q = '' }) => store.searchContacts(q),
+  'contacts.search': async ({ q = '', limit = 12 }) => store.searchContacts(q, limit),
 })
 
 const rl = createInterface({ input: process.stdin })

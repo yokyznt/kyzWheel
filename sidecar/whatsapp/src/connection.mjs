@@ -6,7 +6,7 @@ import pino from 'pino'
 import { RpcError } from './protocol.mjs'
 
 const MIME = { '.pdf': 'application/pdf', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.gif': 'image/gif', '.mp4': 'video/mp4', '.mov': 'video/quicktime', '.mp3': 'audio/mpeg', '.ogg': 'audio/ogg', '.m4a': 'audio/mp4', '.wav': 'audio/wav', '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation', '.zip': 'application/zip', '.txt': 'text/plain' }
-const MAX_FILE = 100 * 1024 * 1024
+const MAX_FILE = 2000 * 1024 * 1024
 
 export function createConnection({ authDir, store, emit, downloads, cacheDir, logger = pino({ level: 'silent' }) }) {
   let sock = null
@@ -177,15 +177,16 @@ export function createConnection({ authDir, store, emit, downloads, cacheDir, lo
     async sendFile({ jid, path, caption }) {
       requireOpen()
       const size = statSync(path).size
-      if (size > MAX_FILE) throw new RpcError('too_large', 'El archivo pasa de 100 MB')
+      if (size > MAX_FILE) throw new RpcError('too_large', 'WhatsApp no deja mandar archivos de más de 2 GB')
       const ext = extname(path).toLowerCase()
       const mimetype = MIME[ext] ?? 'application/octet-stream'
-      const buffer = readFileSync(path)
-      const content = mimetype.startsWith('image/') && ext !== '.gif'
-        ? { image: buffer, caption, mimetype }
-        : mimetype.startsWith('video/')
-          ? { video: buffer, caption, mimetype }
-          : { document: buffer, fileName: basename(path), mimetype, caption }
+      const big = size > 16 * 1024 * 1024
+      const media = big ? { url: path } : readFileSync(path)
+      const content = mimetype.startsWith('image/') && ext !== '.gif' && !big
+        ? { image: media, caption, mimetype }
+        : mimetype.startsWith('video/') && size <= 64 * 1024 * 1024
+          ? { video: media, caption, mimetype }
+          : { document: media, fileName: basename(path), mimetype, caption }
       const sent = await enqueue(() => sock.sendMessage(jid, content))
       remember([sent])
       store.upsertMessages([sent])
