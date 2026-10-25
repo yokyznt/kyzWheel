@@ -277,7 +277,7 @@ export function createStore(file, { maxChats = 80, maxMessagesPerChat = 60, debo
         const key = isLid(c.jid) && state.alias[c.jid] && seen.has(state.alias[c.jid]) ? state.alias[c.jid] : c.jid
         if (!seen.has(key)) seen.set(key, c.name)
       }
-      return [...seen].filter(([jid, name]) => fold(name).includes(f) || jid.includes(f)).slice(0, n).map(([jid, name]) => ({ jid, name }))
+      return [...seen].filter(([jid, name]) => fold(name).includes(f) || jid.includes(f)).sort((a, b) => fold(a[1]).localeCompare(fold(b[1]))).slice(0, n).map(([jid, name]) => ({ jid, name }))
     },
     unreadTotal: () => Object.values(state.chats).reduce((a, c) => a + (c.unread ?? 0), 0),
     flush,

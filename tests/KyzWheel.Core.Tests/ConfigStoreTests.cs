@@ -94,4 +94,35 @@ public sealed class ConfigStoreTests : IDisposable
         Assert.NotEmpty(ConfigStore.Validate(dupKey));
         Assert.NotEmpty(ConfigStore.Validate(clashGlobal));
     }
+
+    [Fact]
+    public void Sub_customization_and_notify_settings_roundtrip()
+    {
+        var path = Path.Combine(Directory.CreateTempSubdirectory("kyzcfg").FullName, "c.json");
+        var store = new ConfigStore(path);
+        var cfg = AppConfig.Default with
+        {
+            NotifyMonitor = "2",
+            NotifyPosition = "bottom-right",
+            SubOrder = new Dictionary<string, IReadOnlyList<string>> { ["phone"] = ["phone:ring", "phone:clip"] },
+            SubHidden = new Dictionary<string, IReadOnlyList<string>> { ["phone"] = ["phone:ping"] },
+        };
+        store.Save(cfg);
+        var back = store.Load();
+        Assert.Equal("2", back.NotifyMonitor);
+        Assert.Equal("bottom-right", back.NotifyPosition);
+        Assert.Equal(["phone:ring", "phone:clip"], back.SubOrder["phone"]);
+        Assert.Equal(["phone:ping"], back.SubHidden["phone"]);
+    }
+
+    [Fact]
+    public void Old_config_without_sub_fields_is_safe()
+    {
+        var path = Path.Combine(Directory.CreateTempSubdirectory("kyzcfg").FullName, "c.json");
+        File.WriteAllText(path, "{\"Version\":1,\"GlobalHotkey\":\"Ctrl+Alt+Shift\",\"Slots\":[{\"Id\":\"phone\",\"Name\":\"Celular\",\"Glyph\":\"x\",\"ColorHex\":\"#60A5FA\",\"Type\":\"Phone\",\"Target\":null,\"Hotkey\":null,\"Notify\":false}],\"AccentHex\":\"#fff\",\"StartWithWindows\":true,\"SubOrder\":null}");
+        var c = new ConfigStore(path).Load();
+        Assert.Empty(c.SubOrder);
+        Assert.Empty(c.SubHidden);
+        Assert.Equal("cursor", c.NotifyMonitor);
+    }
 }
