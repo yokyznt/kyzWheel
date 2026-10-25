@@ -1,4 +1,4 @@
-param([string]$Version = "0.5.1", [switch]$Pack)
+param([string]$Version = "0.6.0", [switch]$Pack, [switch]$Upload)
 $ErrorActionPreference = "Stop"
 $root = Split-Path $PSScriptRoot -Parent
 $out = Join-Path $root "publish"
@@ -44,5 +44,14 @@ if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 Copy-Item (Join-Path $wa "dist\wa-sidecar.exe") $out -Force
 if ($Pack) {
   $vpk = if (Get-Command vpk -ErrorAction SilentlyContinue) { "vpk" } else { Join-Path $env:USERPROFILE ".dotnet\tools\vpk.exe" }
+  Get-ChildItem "$root\Releases" -Filter "kyzWheel-*-full.nupkg" -ErrorAction SilentlyContinue | Where-Object { $_.Name -notlike "*-$Version-full.nupkg" } | Sort-Object LastWriteTime -Descending | Select-Object -Skip 1 | Remove-Item -Force
+  Get-ChildItem "$root\Releases" -Filter "kyzWheel-*-delta.nupkg" -ErrorAction SilentlyContinue | Remove-Item -Force
   & $vpk pack -u kyzWheel -v $Version -p $out -e KyzWheel.Guard.exe -i "$root\src\KyzWheel.App\Assets\kyzWheel.ico" --packTitle kyzWheel --packAuthors yokyznt --shortcuts "Desktop,StartMenuRoot" -r win-x64 -o "$root\Releases"
+  if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+  Copy-Item "$root\Releases\kyzWheel-win-Setup.exe" (Join-Path ([Environment]::GetFolderPath("Desktop")) "kyzWheel-Instalador.exe") -Force
+  if ($Upload) {
+    $token = (gh auth token).Trim()
+    & $vpk upload github -o "$root\Releases" --repoUrl https://github.com/yokyznt/kyzWheel --publish --releaseName "kyzWheel $Version" --tag "v$Version" --token $token
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+  }
 }

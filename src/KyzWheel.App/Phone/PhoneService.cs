@@ -64,6 +64,14 @@ public sealed class PhoneService
         return (await stdout) + "\n" + err;
     }
 
+    public static async Task<IReadOnlyList<PhoneStatus>> AllAsync()
+    {
+        try { await RunAsync(PhoneCli.Refresh, 5000); } catch (PhoneException) { }
+        return PhoneCli.ParseStatus(await RunAsync(PhoneCli.ListAll));
+    }
+
+    public static Task PairAsync(string id) => RunAsync(PhoneCli.Pair(id), 30000);
+
     public async Task<IReadOnlyList<PhoneDevice>> DevicesAsync()
     {
         var list = PhoneCli.ParseDevices(await RunAsync(PhoneCli.ListAvailable));

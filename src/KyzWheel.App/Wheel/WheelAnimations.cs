@@ -231,4 +231,20 @@ public static class WheelAnimations
         a.Duration = TimeSpan.FromMilliseconds(220);
         v.StartAnimation("Scale", a);
     }
+
+    public static void Wiggle(Microsoft.UI.Xaml.UIElement el)
+    {
+        var v = Microsoft.UI.Xaml.Hosting.ElementCompositionPreview.GetElementVisual(el);
+        var c = v.Compositor;
+        v.CenterPoint = new System.Numerics.Vector3(180, 180, 0);
+        var a = c.CreateScalarKeyFrameAnimation();
+        a.InsertKeyFrame(0f, 0f);
+        a.InsertKeyFrame(0.25f, 1.2f);
+        a.InsertKeyFrame(0.75f, -1.2f);
+        a.InsertKeyFrame(1f, 0f);
+        a.Duration = TimeSpan.FromMilliseconds(520);
+        a.IterationBehavior = Microsoft.UI.Composition.AnimationIterationBehavior.Count;
+        a.IterationCount = 2;
+        v.StartAnimation("RotationAngleInDegrees", a);
+    }
 }

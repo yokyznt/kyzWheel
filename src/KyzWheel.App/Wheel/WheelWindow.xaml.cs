@@ -23,9 +23,9 @@ public sealed partial class WheelWindow : Window
     private const double DiscR = 178;
     private const double Ro = 166;
     private const double Ri = 78;
-    private const double GapPx = 9;
-    private const double CornerOut = 24;
-    private const double CornerIn = 15;
+    private static double GapPx => KyzWheel.App.Shell.Theme.Current.Gap;
+    private static double CornerOut => KyzWheel.App.Shell.Theme.Current.CornerOut;
+    private static double CornerIn => KyzWheel.App.Shell.Theme.Current.CornerIn;
     private const double GrooveR = 70;
     private const double StickR = 60;
     private const double StickDead = 14;
@@ -55,6 +55,7 @@ public sealed partial class WheelWindow : Window
     private Stopwatch? _perf;
 
     public event Action<WheelItem>? ItemInvoked;
+    public event Action<IReadOnlyList<WheelItem>>? Reordered;
     public event Action<WheelItem, IReadOnlyList<string>>? FilesDropped;
     public event Action<double>? FirstFrame;
     public event Action? Hidden;
@@ -99,9 +100,21 @@ public sealed partial class WheelWindow : Window
         Root.PointerReleased += OnPointerReleased;
         Root.PointerPressed += (_, e) =>
         {
-            if (e.GetCurrentPoint(Root).Properties.IsRightButtonPressed)
+            var props = e.GetCurrentPoint(Root).Properties;
+            if (props.IsMiddleButtonPressed)
             {
                 e.Handled = true;
+                ToggleEdit();
+                return;
+            }
+            if (props.IsRightButtonPressed)
+            {
+                e.Handled = true;
+                if (_editing)
+                {
+                    ToggleEdit();
+                    return;
+                }
                 if (!Back()) HideAnimated();
             }
         };
@@ -152,6 +165,10 @@ public sealed partial class WheelWindow : Window
 
     public void ShowRoot(int x, int y, WheelPage page, Stopwatch? perf = null)
     {
+        _editing = false;
+        _editPick = -1;
+        HintTopIcon.Glyph = "\uE70F";
+        HubTitle.FontFamily = KyzWheel.App.Shell.Ui.Font;
         ClearHubFile();
         _dragFiles = [];
         _mode = WheelMode.Root;
@@ -376,6 +393,52 @@ public sealed partial class WheelWindow : Window
         SetHubFile(files);
     }
 
+    private bool _editing;
+    private int _editPick = -1;
+
+    public bool Editing => _editing;
+
+    private void ToggleEdit()
+    {
+        if (!_editing && (_stack.Count > 0 || _mode != WheelMode.Root || _pages.Count != 1 || _slices.Count < 2)) return;
+        _editing = !_editing;
+        _editPick = -1;
+        HintTopIcon.Glyph = _editing ? "\uE73E" : "\uE70F";
+        BuildPage(_page);
+        if (_editing)
+        {
+            HubTitle.Text = "\uE8CB";
+            HubTitle.FontFamily = KyzWheel.App.Shell.Ui.Icons;
+            HubSub.Text = "";
+            foreach (var s in _slices) WheelAnimations.Wiggle(s.Group);
+        }
+        else HubTitle.FontFamily = KyzWheel.App.Shell.Ui.Font;
+    }
+
+    private void EditPick(int idx)
+    {
+        if (idx < 0 || idx >= _slices.Count) return;
+        if (_editPick < 0)
+        {
+            _editPick = idx;
+            WheelAnimations.Hover(_slices[idx].Group, _slices[idx].Halo, true, MidDeg(idx));
+            return;
+        }
+        var a = _editPick;
+        _editPick = -1;
+        if (a == idx) return;
+        var items = _pages[_page].Items.ToList();
+        (items[a], items[idx]) = (items[idx], items[a]);
+        _pages = [_pages[_page] with { Items = items }];
+        _page = 0;
+        BuildPage(0);
+        HubTitle.Text = "\uE8CB";
+        HubTitle.FontFamily = KyzWheel.App.Shell.Ui.Icons;
+        HubSub.Text = "";
+        WheelAnimations.Success(_slices[idx].Group);
+        Reordered?.Invoke(items);
+    }
+
     public bool Back()
     {
         if (_stack.Count == 0) return false;
@@ -458,7 +521,7 @@ public sealed partial class WheelWindow : Window
             var (mx, my) = Polar(mid, (Ro + Ri) / 2);
             var content = new StackPanel { Width = 124, Spacing = 6, IsHitTestVisible = false };
             content.Children.Add(new FontIcon { Glyph = item.Glyph, FontSize = 20, Foreground = new SolidColorBrush(Colors.White), FontFamily = new FontFamily("Segoe Fluent Icons,Segoe MDL2 Assets"), HorizontalAlignment = HorizontalAlignment.Center });
-            content.Children.Add(new TextBlock { Text = item.Label.ToUpperInvariant(), FontFamily = KyzWheel.App.Shell.Ui.Font, FontSize = n > 6 ? 10.5 : 11.5, FontWeight = Microsoft.UI.Text.FontWeights.Bold, CharacterSpacing = 15, Foreground = new SolidColorBrush(Colors.White), HorizontalAlignment = HorizontalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis, MaxWidth = n > 6 ? 92 : 120 });
+            content.Children.Add(new TextBlock { Text = t.Upper ? item.Label.ToUpperInvariant() : item.Label, FontFamily = KyzWheel.App.Shell.Ui.FontFor(t.Font), FontSize = (n > 6 ? 10.5 : 11.5) + (t.Upper ? 0 : 1), FontWeight = Microsoft.UI.Text.FontWeights.Bold, CharacterSpacing = t.Spacing, Foreground = new SolidColorBrush(Colors.White), HorizontalAlignment = HorizontalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis, MaxWidth = n > 6 ? 92 : 120 });
             Canvas.SetLeft(content, mx - 62);
             Canvas.SetTop(content, my - 24);
             group.Children.Add(content);
@@ -490,6 +553,7 @@ public sealed partial class WheelWindow : Window
 
     private void ApplyTheme()
     {
+        if (_pages.Count > 0 && IsShown) BuildPage(_page);
         var t = KyzWheel.App.Shell.Theme.Current;
         Hub.Stroke = KyzWheel.App.Shell.Theme.Edge(t.Rim);
         Rim.Stroke = KyzWheel.App.Shell.Theme.Edge(t.Rim);
@@ -679,8 +743,15 @@ public sealed partial class WheelWindow : Window
 
     private void OnPointerReleased(object sender, PointerRoutedEventArgs e)
     {
-        if (e.GetCurrentPoint(Stage).Properties.PointerUpdateKind == Microsoft.UI.Input.PointerUpdateKind.RightButtonReleased) return;
-        Choose(_locked ? _hover : HitTest(e.GetCurrentPoint(Stage).Position));
+        var kind = e.GetCurrentPoint(Stage).Properties.PointerUpdateKind;
+        if (kind is Microsoft.UI.Input.PointerUpdateKind.RightButtonReleased or Microsoft.UI.Input.PointerUpdateKind.MiddleButtonReleased) return;
+        var idx = _locked ? _hover : HitTest(e.GetCurrentPoint(Stage).Position);
+        if (_editing)
+        {
+            EditPick(idx);
+            return;
+        }
+        Choose(idx);
     }
 
     private void Choose(int idx)
@@ -724,6 +795,9 @@ public sealed partial class WheelWindow : Window
     {
         switch (e.Key)
         {
+            case Windows.System.VirtualKey.Escape when _editing:
+                ToggleEdit();
+                break;
             case Windows.System.VirtualKey.Escape:
             case Windows.System.VirtualKey.Back:
                 if (!Back()) HideAnimated();

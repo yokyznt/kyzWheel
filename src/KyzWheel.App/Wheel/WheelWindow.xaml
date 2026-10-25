@@ -39,7 +39,15 @@
                     </Border>
                     <TextBlock x:Name="HubSub" HorizontalAlignment="Center" TextAlignment="Center" TextTrimming="CharacterEllipsis" MaxWidth="100" FontFamily="ms-appx:///Assets/Fonts/Outfit.ttf#Outfit" Foreground="#B3FFFFFF" FontSize="9.5" FontWeight="SemiBold" CharacterSpacing="50" />
                 </StackPanel>
-                <StackPanel x:Name="Dots" Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,14" Spacing="5" />
+                <StackPanel x:Name="Dots" Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,26" Spacing="5" />
+                <StackPanel x:Name="HintTop" Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,9,0,0" Spacing="3" Opacity="0.75">
+                    <FontIcon Glyph="&#xE962;" FontSize="10.5" FontFamily="Segoe Fluent Icons,Segoe MDL2 Assets" Foreground="White" />
+                    <FontIcon x:Name="HintTopIcon" Glyph="&#xE70F;" FontSize="11.5" FontFamily="Segoe Fluent Icons,Segoe MDL2 Assets" Foreground="White" />
+                </StackPanel>
+                <StackPanel x:Name="HintBottom" Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,9" Spacing="3" Opacity="0.75">
+                    <FontIcon Glyph="&#xE962;" FontSize="10.5" FontFamily="Segoe Fluent Icons,Segoe MDL2 Assets" Foreground="White" />
+                    <FontIcon Glyph="&#xE711;" FontSize="10.5" FontFamily="Segoe Fluent Icons,Segoe MDL2 Assets" Foreground="White" />
+                </StackPanel>
             </Grid>
         </Canvas>
     </Grid>

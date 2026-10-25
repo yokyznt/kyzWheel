@@ -123,7 +123,7 @@ public partial class App : Application
         _wa.MessageArrived += (chat, msg) =>
         {
             if (_config.Slots.Any(s => s.Type is SlotType.WhatsApp or SlotType.Messages && s.Notify))
-                Notify("wa", chat.Jid, chat.IsGroup && !string.IsNullOrEmpty(msg.Sender) ? $"{msg.Sender} · {chat.Name}" : chat.Name, msg.Text, "#25D366", "\uE8BD", () => _wa.AvatarAsync(chat.Jid));
+                Notify("wa", chat.Jid, chat.IsGroup && !string.IsNullOrEmpty(msg.Sender) ? $"{msg.Sender} · {chat.Name}" : chat.Name, msg.Text, "#25D366", "\uE8BD", () => _wa.AvatarAsync(chat.Jid), reply: text => _wa.SendTextAsync(chat.Jid, text));
         };
         _toasts.Clicked += (kind, id) => _ui.TryEnqueue(() => OpenFromToast(kind, id));
         _toasts.Replied += (kind, id, text) => _ui.TryEnqueue(() => _ = ReplyFromToastAsync(kind, id, text));
@@ -149,6 +149,14 @@ public partial class App : Application
             if (e.Reason is Microsoft.Win32.SessionSwitchReason.SessionUnlock or Microsoft.Win32.SessionSwitchReason.ConsoleConnect) _ui.TryEnqueue(() => { _input?.Rehook(); ApplyConfig(_config); });
         };
         _wheel.FilesDropped += OnFilesDropped;
+        _wheel.Reordered += items =>
+        {
+            var order = items.Select(i => i.Tag).OfType<Slot>().Select(x => x.Id).ToList();
+            if (order.Count != _config.Slots.Count) return;
+            var slots = order.Select(id => _config.Slots.First(x => x.Id == id)).ToList();
+            _config = _config with { Slots = slots };
+            _store.Save(_config);
+        };
         _wheel.FirstFrame += ms => Log.Write("perf.log", $"open {ms:0.0} ms");
         _wheel.Hidden += ScheduleTrim;
 
@@ -173,13 +181,14 @@ public partial class App : Application
             var p = at.Split(',');
             _wheel.ShowRoot(int.Parse(p[0]), int.Parse(p[1]), RootPage(), Stopwatch.StartNew());
         }
+        if (Environment.GetCommandLineArgs().Contains("--phone-guide")) ShowPhoneSetup(new Slot("phone", "Celular", "\uE8EA", "#60A5FA", SlotType.Phone, null, null, false));
         if (Environment.GetCommandLineArgs().Contains("--test-banner"))
         {
             BannerWindow.Anchor = (960, -540);
             var bt = _ui.CreateTimer();
             bt.Interval = TimeSpan.FromMilliseconds(2500);
             bt.IsRepeating = false;
-            bt.Tick += (_, _) => Notify("mail", "x|0", "Instagram", "327470 is your Instagram code — Hi, someone tried to sign up", "#EA4335", "\uE715", null, true);
+            bt.Tick += (_, _) => Notify("wa", "x@s.whatsapp.net", "Ana López", "¿Ya viste lo que te mandé? Contéstame cuando puedas 🙌", "#25D366", "\uE8BD", null, true, _ => Task.CompletedTask);
             bt.Start();
         }
         if (Environment.GetCommandLineArgs().SkipWhile(a => a != "--feed").Skip(1).FirstOrDefault() is { } feed)
@@ -208,7 +217,11 @@ public partial class App : Application
             t.Start();
         }
         ScheduleTrim();
-        _ = Task.Run(Updater.CheckAsync);
+        _ = CheckUpdatesAsync();
+        var upd = _ui.CreateTimer();
+        upd.Interval = TimeSpan.FromHours(3);
+        upd.Tick += (_, _) => _ = CheckUpdatesAsync();
+        upd.Start();
     }
 
     private static string? NonEmpty(string? s) => string.IsNullOrWhiteSpace(s) ? null : s;
@@ -237,6 +250,8 @@ public partial class App : Application
 
     private IReadOnlyList<string> ApplyConfig(AppConfig cfg)
     {
+        BannerWindow.Monitor = cfg.NotifyMonitor;
+        BannerWindow.Position = cfg.NotifyPosition;
         var bundled = BundledGoogleClient();
         var stored = _mail.Secrets;
         KyzWheel.Mail.GoogleOAuth.ClientId = NonEmpty(cfg.GoogleClientId) ?? NonEmpty(stored.Get(KyzWheel.Mail.GoogleOAuth.SecretKey + ":id")) ?? Environment.GetEnvironmentVariable("KYZ_GOOGLE_CLIENT_ID") ?? bundled.Id;
@@ -326,7 +341,7 @@ public partial class App : Application
     private readonly KyzWheel.Core.Notifications.QuietQueue _quiet = new();
     private Microsoft.UI.Dispatching.DispatcherQueueTimer? _quietTimer;
 
-    private void Notify(string kind, string id, string title, string body, string color, string glyph, Func<Task<string?>>? avatar, bool force = false)
+    private void Notify(string kind, string id, string title, string body, string color, string glyph, Func<Task<string?>>? avatar, bool force = false, Func<string, Task>? reply = null)
     {
         _ui.TryEnqueue(() =>
         {
@@ -350,7 +365,7 @@ public partial class App : Application
                     _quietTimer.Start();
                     return;
                 }
-                (_banner ??= new BannerWindow()).Show(new Banner(title, body, color, glyph, () => OpenFromToast(kind, id), avatar));
+                (_banner ??= new BannerWindow()).Show(new Banner(title, body, color, glyph, () => OpenFromToast(kind, id), avatar, reply));
             }
             catch (Exception e)
             {
@@ -633,6 +648,13 @@ public partial class App : Application
         {
             _connecting = false;
         }
+    }
+
+    private async Task CheckUpdatesAsync()
+    {
+        var v = await Task.Run(Updater.CheckAsync);
+        if (v is null) return;
+        _ui.TryEnqueue(() => (_banner ??= new BannerWindow()).Show(new Banner("Nueva versión " + v, "Toca para instalarla ahora. Si no, se instala sola la próxima vez que inicies.", "#34D399", "\uE896", Updater.InstallNow)));
     }
 
     private void Welcome()
@@ -936,6 +958,7 @@ public partial class App : Application
                 return new WheelPage(s.Name,
                 [
                     new("phone:recv", "Recibidos", "\uE896", s.ColorHex, 0, "phone:recv"),
+                    new("phone:guide", "Vincular", "\uE71B", s.ColorHex, 0, "phone:guide"),
                     new("phone:clip", "Portapapeles", "\uE77F", s.ColorHex, 0, "phone:clip"),
                     new("phone:file", "Archivo", "\uE8E5", s.ColorHex, 0, "phone:file"),
                     new("phone:shot", "Última captura", "\uE722", s.ColorHex, 0, "phone:shot"),
@@ -1192,6 +1215,9 @@ public partial class App : Application
                 _wheel.HideAnimated();
                 _ = PhoneAsync("Sonando", () => _phone.RingAsync());
                 break;
+            case "phone:guide":
+                ShowPhoneSetup(_config.Slots.FirstOrDefault(x => x.Type == SlotType.Phone) ?? new Slot("phone", "Celular", "\uE8EA", "#60A5FA", SlotType.Phone, null, null, false));
+                break;
             case "phone:recv":
                 {
                     var recv = RecentFiles(1);
@@ -1357,17 +1383,7 @@ public partial class App : Application
         var (x, y) = WheelCenter();
         _wheel.HideAnimated();
         _panel ??= CreatePanel();
-        var body = new Microsoft.UI.Xaml.Controls.StackPanel { Spacing = 12 };
-        body.Children.Add(Ui.Label(_phone.Installed ? "Vincula tu celular" : "Falta KDE Connect", 16, bold: true));
-        body.Children.Add(Ui.Label(_phone.Installed
-            ? "1. Instala «KDE Connect» en tu celular (Play Store).\n2. Conecta el celular y la PC a la misma red Wi-Fi.\n3. En la app del celular toca tu PC y «Vincular»; acepta aquí.\n4. En el celular, en los permisos de KDE Connect, activa Archivos y Portapapeles."
-            : "Instala KDE Connect en la PC y en tu celular. Es gratis y todo viaja cifrado por tu red Wi-Fi.", 12.5, Ui.Secondary, maxLines: 10));
-        if (KyzWheel.App.Phone.PhoneService.AppPath() is { } app)
-            body.Children.Add(Ui.Primary("Abrir KDE Connect", () => Process.Start(new ProcessStartInfo(app) { UseShellExecute = true }), "\uE8EA"));
-        else
-            body.Children.Add(Ui.Primary("Instalar KDE Connect", () => Process.Start(new ProcessStartInfo("winget", "install --id KDE.KDEConnect -e --accept-source-agreements --accept-package-agreements") { UseShellExecute = true }), "\uE896"));
-        body.Children.Add(Ui.Primary("Ya lo vinculé", () => _ = PhoneAsync("Celular conectado", () => _phone.PingAsync("kyzWheel conectado")), "\uE73E"));
-        _panel.Show(s.Glyph, s.ColorHex, s.Name, "Sin celular vinculado", body, [], x, y);
+        _panel.Show(s.Glyph, s.ColorHex, "Vincular celular", "Guía en 4 pasos", new KyzWheel.App.Phone.PhoneGuide(_phone, () => _ = PhoneAsync("Celular conectado", () => _phone.PingAsync("kyzWheel conectado"))), [], x, y);
     }
 
     private void ShowPanel(Slot s, string text)
@@ -1460,6 +1476,16 @@ public partial class App : Application
                     w.BringToFront();
                 },
                 AccountRemoved = a => _mail.Secrets.Remove(ProviderPresets.SecretKey(a.Email)),
+            };
+            _settings.TestNotification += (mon, pos) =>
+            {
+                var (om, op) = (BannerWindow.Monitor, BannerWindow.Position);
+                BannerWindow.Monitor = mon;
+                BannerWindow.Position = pos;
+                _banner?.Hide();
+                (_banner ??= new BannerWindow()).Show(new Banner("Así se verán tus avisos", "Toca para abrir · el botón ↩ responde sin abrir nada", "#25D366", "\uE8BD", null, null, _ => Task.CompletedTask));
+                BannerWindow.Monitor = om;
+                BannerWindow.Position = op;
             };
             _settings.RecordingChanged += rec =>
             {
