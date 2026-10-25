@@ -90,6 +90,24 @@ public partial class App : Application
             _config = _config with { Slots = slots, PhoneSlotOffered = true };
             _store.Save(_config);
         }
+        if (!_config.ToolsOffered)
+        {
+            var slots = _config.Slots.ToList();
+            (string Id, string Name, string Glyph, string Color, SlotType Type)[] tools =
+            [
+                ("capture", "Captura", "\uE722", "#F472B6", SlotType.Capture),
+                ("projects", "Proyectos", "\uE943", "#A78BFA", SlotType.Projects),
+                ("hermes", "Hermes", "\uE99A", "#FBBF24", SlotType.Hermes),
+                ("music", "Música", "\uE8D6", "#1DB954", SlotType.Music),
+            ];
+            foreach (var t in tools)
+                if (slots.All(x => x.Type != t.Type) && slots.Count < AppConfig.MaxSlots
+                    && (t.Type != SlotType.Hermes || KyzWheel.App.Tools.HermesPanel.Exe() is not null)
+                    && (t.Type != SlotType.Projects || Directory.Exists(KyzWheel.Core.Projects.ProjectScanner.DefaultRoot)))
+                    slots.Add(new Slot(t.Id, t.Name, t.Glyph, t.Color, t.Type, null, null, false));
+            _config = _config with { Slots = slots, ToolsOffered = true };
+            _store.Save(_config);
+        }
         Theme.Apply(_config.ThemeId);
         _mail = new MailService(new CredentialManagerStore(), _ui);
         _mail.Changed += UpdateBadges;
@@ -105,7 +123,7 @@ public partial class App : Application
         _wa.MessageArrived += (chat, msg) =>
         {
             if (_config.Slots.Any(s => s.Type is SlotType.WhatsApp or SlotType.Messages && s.Notify))
-                Notify("wa", chat.Jid, chat.IsGroup && !string.IsNullOrEmpty(msg.Sender) ? $"{msg.Sender} · {chat.Name}" : chat.Name, msg.Text, "#25D366", "\uE8BD", () => _wa.AvatarAsync(chat.Jid));
+                Notify("wa", chat.Jid, chat.IsGroup && !string.IsNullOrEmpty(msg.Sender) ? $"{msg.Sender} · {chat.Name}" : chat.Name, msg.Text, "#25D366", "\uE8BD", () => _wa.AvatarAsync(chat.Jid), reply: text => _wa.SendTextAsync(chat.Jid, text));
         };
         _toasts.Clicked += (kind, id) => _ui.TryEnqueue(() => OpenFromToast(kind, id));
         _toasts.Replied += (kind, id, text) => _ui.TryEnqueue(() => _ = ReplyFromToastAsync(kind, id, text));
@@ -131,6 +149,14 @@ public partial class App : Application
             if (e.Reason is Microsoft.Win32.SessionSwitchReason.SessionUnlock or Microsoft.Win32.SessionSwitchReason.ConsoleConnect) _ui.TryEnqueue(() => { _input?.Rehook(); ApplyConfig(_config); });
         };
         _wheel.FilesDropped += OnFilesDropped;
+        _wheel.Reordered += items =>
+        {
+            var order = items.Select(i => i.Tag).OfType<Slot>().Select(x => x.Id).ToList();
+            if (order.Count != _config.Slots.Count) return;
+            var slots = order.Select(id => _config.Slots.First(x => x.Id == id)).ToList();
+            _config = _config with { Slots = slots };
+            _store.Save(_config);
+        };
         _wheel.FirstFrame += ms => Log.Write("perf.log", $"open {ms:0.0} ms");
         _wheel.Hidden += ScheduleTrim;
 
@@ -155,13 +181,14 @@ public partial class App : Application
             var p = at.Split(',');
             _wheel.ShowRoot(int.Parse(p[0]), int.Parse(p[1]), RootPage(), Stopwatch.StartNew());
         }
+        if (Environment.GetCommandLineArgs().Contains("--phone-guide")) ShowPhoneSetup(new Slot("phone", "Celular", "\uE8EA", "#60A5FA", SlotType.Phone, null, null, false));
         if (Environment.GetCommandLineArgs().Contains("--test-banner"))
         {
             BannerWindow.Anchor = (960, -540);
             var bt = _ui.CreateTimer();
             bt.Interval = TimeSpan.FromMilliseconds(2500);
             bt.IsRepeating = false;
-            bt.Tick += (_, _) => Notify("mail", "x|0", "Instagram", "327470 is your Instagram code — Hi, someone tried to sign up", "#EA4335", "\uE715", null, true);
+            bt.Tick += (_, _) => Notify("wa", "x@s.whatsapp.net", "Ana López", "¿Ya viste lo que te mandé? Contéstame cuando puedas 🙌", "#25D366", "\uE8BD", null, true, _ => Task.CompletedTask);
             bt.Start();
         }
         if (Environment.GetCommandLineArgs().SkipWhile(a => a != "--feed").Skip(1).FirstOrDefault() is { } feed)
@@ -176,6 +203,7 @@ public partial class App : Application
             };
             ft.Start();
         }
+        if (!Environment.GetCommandLineArgs().Contains("--passive")) Welcome();
         if (Environment.GetCommandLineArgs().SkipWhile(a => a != "--open").Skip(1).FirstOrDefault() is { } open
             && Enum.TryParse<SlotType>(open, true, out var type)
             && _config.Slots.FirstOrDefault(s => s.Type == type) is { } slot)
@@ -189,7 +217,11 @@ public partial class App : Application
             t.Start();
         }
         ScheduleTrim();
-        _ = Task.Run(Updater.CheckAsync);
+        _ = CheckUpdatesAsync();
+        var upd = _ui.CreateTimer();
+        upd.Interval = TimeSpan.FromHours(3);
+        upd.Tick += (_, _) => _ = CheckUpdatesAsync();
+        upd.Start();
     }
 
     private static string? NonEmpty(string? s) => string.IsNullOrWhiteSpace(s) ? null : s;
@@ -218,6 +250,8 @@ public partial class App : Application
 
     private IReadOnlyList<string> ApplyConfig(AppConfig cfg)
     {
+        BannerWindow.Monitor = cfg.NotifyMonitor;
+        BannerWindow.Position = cfg.NotifyPosition;
         var bundled = BundledGoogleClient();
         var stored = _mail.Secrets;
         KyzWheel.Mail.GoogleOAuth.ClientId = NonEmpty(cfg.GoogleClientId) ?? NonEmpty(stored.Get(KyzWheel.Mail.GoogleOAuth.SecretKey + ":id")) ?? Environment.GetEnvironmentVariable("KYZ_GOOGLE_CLIENT_ID") ?? bundled.Id;
@@ -307,7 +341,7 @@ public partial class App : Application
     private readonly KyzWheel.Core.Notifications.QuietQueue _quiet = new();
     private Microsoft.UI.Dispatching.DispatcherQueueTimer? _quietTimer;
 
-    private void Notify(string kind, string id, string title, string body, string color, string glyph, Func<Task<string?>>? avatar, bool force = false)
+    private void Notify(string kind, string id, string title, string body, string color, string glyph, Func<Task<string?>>? avatar, bool force = false, Func<string, Task>? reply = null)
     {
         _ui.TryEnqueue(() =>
         {
@@ -331,7 +365,7 @@ public partial class App : Application
                     _quietTimer.Start();
                     return;
                 }
-                (_banner ??= new BannerWindow()).Show(new Banner(title, body, color, glyph, () => OpenFromToast(kind, id), avatar));
+                (_banner ??= new BannerWindow()).Show(new Banner(title, body, color, glyph, () => OpenFromToast(kind, id), avatar, reply));
             }
             catch (Exception e)
             {
@@ -344,6 +378,124 @@ public partial class App : Application
     {
         if (_wa.Status.State == "open") _ = ShowWaFeedAsync();
         else ShowMailFeed();
+    }
+
+    private readonly KyzWheel.App.Tools.MediaService _media = new();
+
+    private sealed record ProjectAction(KyzWheel.Core.Projects.ProjectInfo Project, string Kind);
+
+    private static IReadOnlyList<WheelItem> ProjectActions(KyzWheel.Core.Projects.ProjectInfo p, string color)
+    {
+        var list = new List<WheelItem>
+        {
+            new("pa:code:" + p.Name, "VS Code", "\uE943", color, 0, new ProjectAction(p, "code")),
+            new("pa:dir:" + p.Name, "Carpeta", "\uE838", color, 0, new ProjectAction(p, "dir")),
+            new("pa:term:" + p.Name, "Terminal", "\uE756", color, 0, new ProjectAction(p, "term")),
+        };
+        if (p.GitHubUrl is not null) list.Add(new("pa:gh:" + p.Name, "GitHub", "\uE774", color, 0, new ProjectAction(p, "gh")));
+        if (p.HasApkScript) list.Add(new("pa:apk:" + p.Name, "Compilar APK", "\uE8EA", color, 0, new ProjectAction(p, "apk")));
+        return list;
+    }
+
+    private void RunProjectAction(ProjectAction a)
+    {
+        try
+        {
+            var dir = a.Project.Path;
+            System.Diagnostics.ProcessStartInfo psi = a.Kind switch
+            {
+                "code" => new("cmd.exe", $"/c code \"{dir}\"") { CreateNoWindow = true, UseShellExecute = false },
+                "dir" => new("explorer.exe", $"\"{dir}\"") { UseShellExecute = true },
+                "term" => File.Exists(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Microsoft", "WindowsApps", "wt.exe"))
+                    ? new("wt.exe", $"-d \"{dir}\"") { UseShellExecute = true }
+                    : new("powershell.exe", "-NoExit") { WorkingDirectory = dir, UseShellExecute = true },
+                "gh" => new(a.Project.GitHubUrl!) { UseShellExecute = true },
+                _ => new("powershell.exe", "-NoExit -Command npm run android:apk") { WorkingDirectory = dir, UseShellExecute = true },
+            };
+            System.Diagnostics.Process.Start(psi);
+        }
+        catch (Exception e)
+        {
+            Log.Error(e);
+            _toasts.Info("Proyectos", "No se pudo abrir: " + e.Message);
+        }
+    }
+
+    private async Task MusicAsync(Func<Task<bool>> op)
+    {
+        if (!await op()) Notify("music", "", "Música", "No hay nada reproduciéndose", "#1DB954", "\uE8D6", null, true);
+        else if (_media.NowPlaying is { } np) Notify("music", "", _media.Playing ? "Sonando" : "En pausa", np, "#1DB954", "\uE8D6", null, true);
+    }
+
+    private string ClipText()
+    {
+        try
+        {
+            var view = Windows.ApplicationModel.DataTransfer.Clipboard.GetContent();
+            if (view.Contains(Windows.ApplicationModel.DataTransfer.StandardDataFormats.Text)) return view.GetTextAsync().AsTask().GetAwaiter().GetResult();
+        }
+        catch (Exception)
+        {
+        }
+        return _clips.History.Items.FirstOrDefault(c => c.Kind == KyzWheel.Core.Clipboard.ClipKind.Text)?.Text ?? "";
+    }
+
+    private void ShowTranslate(string text)
+    {
+        Func<string, Task>? toPhone = _phone.Installed ? t => PhoneAsync("Traducción enviada", () => _phone.SendTextAsync(t)) : null;
+        DockPanel("\uE8C1", "#38BDF8", "Traducir", "Español ↔ inglés", new KyzWheel.App.Tools.TranslatePanel(text, toPhone), []);
+    }
+
+    private async Task SnipAsync(bool ocr)
+    {
+        try
+        {
+            var path = await KyzWheel.App.Tools.ScreenTools.SnipAsync(TimeSpan.FromSeconds(60));
+            if (path is null) return;
+            if (ocr)
+            {
+                var text = await KyzWheel.App.Tools.ScreenTools.OcrAsync(path);
+                if (text.Trim().Length == 0)
+                {
+                    Notify("cap", "", "Copiar texto", "No encontré texto en el recorte", "#F472B6", "\uE8E9", null, true);
+                    return;
+                }
+                KyzWheel.App.Tools.ScreenTools.CopyText(text);
+                Notify("cap", "", "Texto copiado", text, "#F472B6", "\uE8E9", null, true);
+                return;
+            }
+            var (x, y) = User32.CursorPosition();
+            _wheel.ShowFiles(x, y, [path], [FileRootPage([path])], Stopwatch.StartNew());
+        }
+        catch (Exception e)
+        {
+            Log.Error(e);
+            Notify("cap", "", "Captura", "No se pudo: " + e.Message, "#F472B6", "\uE722", null, true);
+        }
+    }
+
+    private async Task FullShotAsync()
+    {
+        try
+        {
+            await Task.Delay(350);
+            var dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyPictures), "Screenshots");
+            var before = DateTime.UtcNow;
+            KyzWheel.Platform.Native.Keys.Chord(0x5B, 0x2C);
+            string? path = null;
+            for (var i = 0; i < 30 && path is null; i++)
+            {
+                await Task.Delay(200);
+                if (Directory.Exists(dir)) path = new DirectoryInfo(dir).EnumerateFiles("*.png").Where(f => f.CreationTimeUtc >= before.AddSeconds(-1)).OrderByDescending(f => f.CreationTimeUtc).FirstOrDefault()?.FullName;
+            }
+            if (path is null) return;
+            var (x, y) = User32.CursorPosition();
+            _wheel.ShowFiles(x, y, [path], [FileRootPage([path])], Stopwatch.StartNew());
+        }
+        catch (Exception e)
+        {
+            Log.Error(e);
+        }
     }
 
     private void OpenFromToast(string kind, string id)
@@ -402,7 +554,7 @@ public partial class App : Application
             1 => _mail.Accounts[0].Email,
             var n => $"{n} cuentas · {_mail.Inbox.UnreadCount} sin leer",
         };
-        _panel.Show(s.Glyph, s.ColorHex, s.Name, sub, new MailPanel(_mail, OpenMail, OpenAddAccount), [compose, refresh, settings], x, y);
+        _panel.Show(s.Glyph, s.ColorHex, s.Name, sub, new MailPanel(_mail, OpenMail, ConnectGmail), [compose, refresh, settings], x, y);
     }
 
     private void ShowClipboardPanel(Slot s)
@@ -454,6 +606,79 @@ public partial class App : Application
         w.BringToFront();
     }
 
+    private bool _connecting;
+
+    private void ConnectGmail()
+    {
+        if (!GoogleOAuth.Configured)
+        {
+            OpenAddAccount();
+            return;
+        }
+        if (_connecting) return;
+        _connecting = true;
+        _panel?.HidePanel();
+        _ = ConnectGmailAsync();
+    }
+
+    private async Task ConnectGmailAsync()
+    {
+        Notify("gmail", "", "Elige tu cuenta de Google", "Se abrió tu navegador. Si dice «app no verificada»: Configuración avanzada › Ir a kyzWheel.", "#EA4335", "\uE715", null, true);
+        try
+        {
+            using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(5));
+            var r = await GoogleOAuth.SignInAsync(cts.Token);
+            _mail.Secrets.Set(ProviderPresets.SecretKey(r.Email), r.RefreshToken);
+            var existing = _config.MailAccounts ?? [];
+            if (existing.Any(a => a.Email.Equals(r.Email, StringComparison.OrdinalIgnoreCase)))
+            {
+                _mail.Restart(r.Email);
+                Notify("gmail", "", "Gmail ya estaba conectado", r.Email + " · acceso renovado", "#EA4335", "\uE715", null, true);
+                return;
+            }
+            var account = ProviderPresets.For(r.Email) with { DisplayName = r.Name, Auth = MailAuth.Google };
+            ApplyConfig(_config with { MailAccounts = [.. existing, account] });
+            Notify("gmail", "", "Gmail conectado", r.Email + " · toca para ver tus correos", "#EA4335", "\uE715", null, true);
+        }
+        catch (Exception e) when (e is MailKit.Security.AuthenticationException or OperationCanceledException or HttpRequestException or InvalidOperationException or System.Net.HttpListenerException)
+        {
+            Notify("gmail", "", "No se conectó Gmail", e is OperationCanceledException ? "Se acabó el tiempo. Inténtalo otra vez." : e.Message, "#EA4335", "\uE715", null, true);
+        }
+        finally
+        {
+            _connecting = false;
+        }
+    }
+
+    private async Task CheckUpdatesAsync()
+    {
+        var v = await Task.Run(Updater.CheckAsync);
+        if (v is null) return;
+        _ui.TryEnqueue(() => (_banner ??= new BannerWindow()).Show(new Banner("Nueva versión " + v, "Toca para instalarla ahora. Si no, se instala sola la próxima vez que inicies.", "#34D399", "\uE896", Updater.InstallNow)));
+    }
+
+    private void Welcome()
+    {
+        if (_config.Welcomed) return;
+        _config = _config with { Welcomed = true };
+        _store.Save(_config);
+        var hk = _config.GlobalHotkey.Replace("+", " + ");
+        var t = _ui.CreateTimer();
+        t.Interval = TimeSpan.FromSeconds(3);
+        t.IsRepeating = false;
+        t.Tick += (_, _) =>
+        {
+            (_banner ??= new BannerWindow()).Show(new Banner("kyzWheel está listo", $"Atajo: {hk}. Aprieta y suelta para abrir la rueda.", "#34D399", "\uE8F2", OpenWheelAtCursor));
+            if ((_config.MailAccounts ?? []).Count > 0) return;
+            var t2 = _ui.CreateTimer();
+            t2.Interval = TimeSpan.FromSeconds(8);
+            t2.IsRepeating = false;
+            t2.Tick += (_, _) => _banner!.Show(new Banner("Conecta tu Gmail", "Toca aquí y elige tu cuenta de Google.", "#EA4335", "\uE715", ConnectGmail));
+            t2.Start();
+        };
+        t.Start();
+    }
+
     private void OpenAddAccount()
     {
         _panel?.HidePanel();
@@ -492,7 +717,7 @@ public partial class App : Application
 
     private WheelPage FileRootPage(IReadOnlyList<string> files)
     {
-        var items = _config.Slots.Where(s => s.Type != SlotType.Clipboard && s.Type != SlotType.OpenUrl).Select(SlotItem).ToList();
+        var items = _config.Slots.Where(s => s.Type is not (SlotType.Clipboard or SlotType.OpenUrl or SlotType.Capture or SlotType.Projects or SlotType.Music)).Select(SlotItem).ToList();
         if (!_config.Slots.Any(s => s.Type == SlotType.Converter))
             items.Insert(0, new WheelItem("slot:converter", "Convertir", "\uE8AB", "#FF8A3D", 0, new Slot("converter", "Convertir", "\uE8AB", "#FF8A3D", SlotType.Converter, null, null, false)));
         return new WheelPage(files.Count == 1 ? Path.GetFileName(files[0]) : $"{files.Count} archivos", items);
@@ -705,13 +930,35 @@ public partial class App : Application
                 return new WheelPage(s.Name,
                 [
                     new("msg:wa", "WhatsApp", "\uE8BD", "#25D366", _wa.Status.Unread, "msg:wa"),
-                    new("msg:mail", "Gmail", "\uE715", "#EA4335", _mail.Inbox.UnreadCount, "msg:mail"),
+                    new("msg:mail", _mail.Accounts.Count == 0 ? "Conectar Gmail" : "Gmail", "\uE715", "#EA4335", _mail.Inbox.UnreadCount, "msg:mail"),
                 ], s);
             case SlotType.Messages:
                 return new WheelPage(s.Name, [SlotItem(WaSlot), SlotItem(MailSlot)], s);
+            case SlotType.Capture:
+                return new WheelPage(s.Name,
+                [
+                    new("cap:snip", "Recortar", "\uE7A8", s.ColorHex, 0, "cap:snip"),
+                    new("cap:ocr", "Copiar texto", "\uE8E9", s.ColorHex, 0, "cap:ocr"),
+                    new("cap:full", "Pantalla", "\uE7F4", s.ColorHex, 0, "cap:full"),
+                    new("cap:clip", "Grabar clip", "\uE714", s.ColorHex, 0, "cap:clip"),
+                ], s);
+            case SlotType.Projects:
+                var projects = KyzWheel.Core.Projects.ProjectScanner.Scan();
+                if (projects.Count == 0) return null;
+                return new WheelPage(s.Name, projects.Select(pr => new WheelItem("proj:" + pr.Name, Short(pr.Name), "\uE8B7", s.ColorHex, 0, pr, ProjectActions(pr, s.ColorHex))).ToList(), s);
+            case SlotType.Music:
+                _ = _media.RefreshAsync();
+                return new WheelPage(_media.NowPlaying is { } np ? Short(np, 28) : s.Name,
+                [
+                    new("music:prev", "Anterior", "\uE892", s.ColorHex, 0, "music:prev"),
+                    new("music:toggle", _media.Playing ? "Pausa" : "Reproducir", _media.Playing ? "\uE769" : "\uE768", s.ColorHex, 0, "music:toggle"),
+                    new("music:next", "Siguiente", "\uE893", s.ColorHex, 0, "music:next"),
+                ], s);
             case SlotType.Phone when mode == WheelMode.Root && _phone.Installed:
                 return new WheelPage(s.Name,
                 [
+                    new("phone:recv", "Recibidos", "\uE896", s.ColorHex, 0, "phone:recv"),
+                    new("phone:guide", "Vincular", "\uE71B", s.ColorHex, 0, "phone:guide"),
                     new("phone:clip", "Portapapeles", "\uE77F", s.ColorHex, 0, "phone:clip"),
                     new("phone:file", "Archivo", "\uE8E5", s.ColorHex, 0, "phone:file"),
                     new("phone:shot", "Última captura", "\uE722", s.ColorHex, 0, "phone:shot"),
@@ -721,12 +968,14 @@ public partial class App : Application
             case SlotType.Clipboard when mode == WheelMode.Root:
                 var clips = _clips.History.Items;
                 if (clips.Count == 0) return null;
-                return new WheelPage(s.Name, clips.Select(c => new WheelItem("clip:" + c.Id, Short(c.Preview), c.Kind switch
+                var clipItems = new List<WheelItem> { new("clip:translate", "Traducir", "\uE8C1", s.ColorHex, 0, "clip:translate") };
+                clipItems.AddRange(clips.Select(c => new WheelItem("clip:" + c.Id, Short(c.Preview), c.Kind switch
                 {
                     KyzWheel.Core.Clipboard.ClipKind.Image => "\uEB9F",
                     KyzWheel.Core.Clipboard.ClipKind.Files => "\uE8B7",
                     _ => c.Pinned ? "\uE718" : "\uE8C8",
-                }, s.ColorHex, 0, c)).ToList(), s);
+                }, s.ColorHex, 0, c)));
+                return new WheelPage(s.Name, clipItems, s);
             default:
                 return null;
         }
@@ -847,24 +1096,40 @@ public partial class App : Application
         IReadOnlyList<KyzWheel.Core.WhatsApp.WaFeedItem> items;
         try
         {
-            items = await _wa.RecentMessagesAsync(40);
+            items = await _wa.RecentMessagesAsync(120);
         }
-        catch (Exception e) when (e is WaException or TimeoutException or InvalidOperationException)
+        catch (Exception e)
         {
+            Log.Error(e);
             return [];
         }
         var chats = _waChats.ToDictionary(c => c.Jid);
-        return items.Select(i => new KyzWheel.App.Messages.FeedEntry(
-            i.Jid + "|" + i.Message.Id,
-            i.Message.FromMe ? "Tú" : i.IsGroup && !string.IsNullOrEmpty(i.Message.Sender) ? i.Message.Sender! : i.ChatName,
-            i.IsGroup ? i.ChatName : i.Message.FromMe ? "a " + i.ChatName : null,
-            i.Message.Text,
-            i.Message.Ts,
-            "#25D366",
-            !i.Message.FromMe && chats.TryGetValue(i.Jid, out var c) && c.Unread > 0,
-            i.Jid,
-            i.Message.File?.Thumb,
-            () => ShowWhatsAppPanel(WaSlot, [], chats.TryGetValue(i.Jid, out var ch) ? ch : new KyzWheel.Core.WhatsApp.WaChat(i.Jid, i.ChatName, "", i.Message.Ts, 0, i.IsGroup)))).ToList();
+        return KyzWheel.Core.WhatsApp.WaFeedGrouper.Group(items).Select(g =>
+        {
+            var lines = g.Lines.Select(l =>
+            {
+                var m = l.Item.Message;
+                var who = m.FromMe ? "Tú" : g.IsGroup ? (string.IsNullOrEmpty(m.Sender) ? null : m.Sender) : g.ChatName;
+                var text = m.File is null ? m.Text : m.File.Kind is "sticker" or "audio" ? "" : m.Caption;
+                return new KyzWheel.App.Messages.FeedLine(who, text, m.Ts, l.Depth, l.ParentInGroup, m.QuoteSender, m.QuoteText, m.File);
+            }).ToList();
+            var last = g.Lines.MaxBy(l => l.Item.Message.Ts)!.Item.Message;
+            var chat = chats.TryGetValue(g.Jid, out var c) ? c : new KyzWheel.Core.WhatsApp.WaChat(g.Jid, g.ChatName, "", g.Last, 0, g.IsGroup);
+            return new KyzWheel.App.Messages.FeedEntry(
+                g.Jid,
+                g.ChatName,
+                g.Lines.Count > 1 ? $"{g.Lines.Count} mensajes" : null,
+                string.Join("\n", g.Lines.Select(l => l.Item.Message.Text)),
+                g.Last,
+                "#25D366",
+                chat.Unread > 0,
+                g.Jid,
+                null,
+                () => ShowWhatsAppPanel(WaSlot, [], chat),
+                null,
+                lines,
+                last.Id + g.Lines.Count);
+        }).ToList();
     }
 
     private IReadOnlyList<KyzWheel.App.Messages.FeedEntry> MailEntries()
@@ -892,7 +1157,8 @@ public partial class App : Application
             return;
         }
         var entries = await WaEntriesAsync();
-        _feed = new KyzWheel.App.Messages.MessageFeedPanel(entries, _toasts, "Cuando lleguen mensajes aparecen aquí.", e => e.AvatarKey is { } jid ? _wa.AvatarAsync(jid) : Task.FromResult<string?>(null));
+        var waNote = Ui.Label("", 11, Ui.Tertiary);
+        _feed = new KyzWheel.App.Messages.MessageFeedPanel(entries, _toasts, "Cuando lleguen mensajes aparecen aquí.", e => e.AvatarKey is { } jid ? _wa.AvatarAsync(jid) : Task.FromResult<string?>(null), f => KyzWheel.App.WhatsApp.WhatsAppPanel.MediaView(_wa, waNote, f));
         _feedKind = "wa";
         DockPanel("\uE8BD", "#25D366", "WhatsApp", "En vivo · doble clic abre el chat", _feed, []);
     }
@@ -901,14 +1167,16 @@ public partial class App : Application
     {
         if (_mail.Accounts.Count == 0)
         {
-            ShowMailPanel(MailSlot);
+            _wheel.HideAnimated();
+            ConnectGmail();
             return;
         }
         _feed = new KyzWheel.App.Messages.MessageFeedPanel(MailEntries(), _toasts, "No hay correos recientes.");
         _feedKind = "mail";
         var compose = Ui.IconButton("\uE70F", "Redactar", () => OpenCompose([], null));
         var refresh = Ui.IconButton("\uE72C", "Actualizar", () => { foreach (var a in _mail.Accounts) _mail.Restart(a.Email); });
-        DockPanel("\uE715", "#EA4335", "Gmail", $"{_mail.Inbox.UnreadCount} sin leer · en vivo", _feed, [refresh, compose]);
+        var add = Ui.IconButton("\uE710", "Agregar otra cuenta de Google", ConnectGmail);
+        DockPanel("\uE715", "#EA4335", "Gmail", $"{_mail.Inbox.UnreadCount} sin leer · en vivo", _feed, [add, refresh, compose]);
     }
 
     private void OnItemInvoked(WheelItem item)
@@ -946,6 +1214,49 @@ public partial class App : Application
             case "phone:ring":
                 _wheel.HideAnimated();
                 _ = PhoneAsync("Sonando", () => _phone.RingAsync());
+                break;
+            case "phone:guide":
+                ShowPhoneSetup(_config.Slots.FirstOrDefault(x => x.Type == SlotType.Phone) ?? new Slot("phone", "Celular", "\uE8EA", "#60A5FA", SlotType.Phone, null, null, false));
+                break;
+            case "phone:recv":
+                {
+                    var recv = RecentFiles(1);
+                    var dl = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads");
+                    _wheel.HideAnimated();
+                    System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("explorer.exe", recv.Count > 0 && recv[0].StartsWith(dl, StringComparison.OrdinalIgnoreCase) ? $"/select,\"{recv[0]}\"" : $"\"{dl}\"") { UseShellExecute = true });
+                    break;
+                }
+            case "cap:snip":
+                _wheel.HideAnimated();
+                _ = SnipAsync(false);
+                break;
+            case "cap:ocr":
+                _wheel.HideAnimated();
+                _ = SnipAsync(true);
+                break;
+            case "cap:full":
+                _wheel.HideAnimated();
+                _ = FullShotAsync();
+                break;
+            case "cap:clip":
+                _wheel.HideAnimated();
+                KyzWheel.Platform.Native.Keys.Chord(0x5B, 0x12, 0x47);
+                break;
+            case "music:prev":
+                _ = MusicAsync(() => _media.PreviousAsync());
+                break;
+            case "music:toggle":
+                _ = MusicAsync(() => _media.ToggleAsync());
+                break;
+            case "music:next":
+                _ = MusicAsync(() => _media.NextAsync());
+                break;
+            case "clip:translate":
+                ShowTranslate(ClipText());
+                break;
+            case ProjectAction pa:
+                _wheel.HideAnimated();
+                RunProjectAction(pa);
                 break;
             case "phone:ping":
                 _wheel.HideAnimated();
@@ -1005,6 +1316,9 @@ public partial class App : Application
                 case SlotType.Converter:
                     _wheel.HideAnimated();
                     OpenConverter();
+                    break;
+                case SlotType.Hermes:
+                    DockPanel("\uE99A", s.ColorHex, "Hermes", _wheel.Files.Count > 0 ? "Pregunta sobre el archivo" : "Pregunta lo que sea", new KyzWheel.App.Tools.HermesPanel(_wheel.Files.ToList()), []);
                     break;
                 case SlotType.Mail:
                     ShowMailPanel(s);
@@ -1069,17 +1383,7 @@ public partial class App : Application
         var (x, y) = WheelCenter();
         _wheel.HideAnimated();
         _panel ??= CreatePanel();
-        var body = new Microsoft.UI.Xaml.Controls.StackPanel { Spacing = 12 };
-        body.Children.Add(Ui.Label(_phone.Installed ? "Vincula tu celular" : "Falta KDE Connect", 16, bold: true));
-        body.Children.Add(Ui.Label(_phone.Installed
-            ? "1. Instala «KDE Connect» en tu celular (Play Store).\n2. Conecta el celular y la PC a la misma red Wi-Fi.\n3. En la app del celular toca tu PC y «Vincular»; acepta aquí.\n4. En el celular, en los permisos de KDE Connect, activa Archivos y Portapapeles."
-            : "Instala KDE Connect en la PC y en tu celular. Es gratis y todo viaja cifrado por tu red Wi-Fi.", 12.5, Ui.Secondary, maxLines: 10));
-        if (KyzWheel.App.Phone.PhoneService.AppPath() is { } app)
-            body.Children.Add(Ui.Primary("Abrir KDE Connect", () => Process.Start(new ProcessStartInfo(app) { UseShellExecute = true }), "\uE8EA"));
-        else
-            body.Children.Add(Ui.Primary("Instalar KDE Connect", () => Process.Start(new ProcessStartInfo("winget", "install --id KDE.KDEConnect -e --accept-source-agreements --accept-package-agreements") { UseShellExecute = true }), "\uE896"));
-        body.Children.Add(Ui.Primary("Ya lo vinculé", () => _ = PhoneAsync("Celular conectado", () => _phone.PingAsync("kyzWheel conectado")), "\uE73E"));
-        _panel.Show(s.Glyph, s.ColorHex, s.Name, "Sin celular vinculado", body, [], x, y);
+        _panel.Show(s.Glyph, s.ColorHex, "Vincular celular", "Guía en 4 pasos", new KyzWheel.App.Phone.PhoneGuide(_phone, () => _ = PhoneAsync("Celular conectado", () => _phone.PingAsync("kyzWheel conectado"))), [], x, y);
     }
 
     private void ShowPanel(Slot s, string text)
@@ -1172,6 +1476,16 @@ public partial class App : Application
                     w.BringToFront();
                 },
                 AccountRemoved = a => _mail.Secrets.Remove(ProviderPresets.SecretKey(a.Email)),
+            };
+            _settings.TestNotification += (mon, pos) =>
+            {
+                var (om, op) = (BannerWindow.Monitor, BannerWindow.Position);
+                BannerWindow.Monitor = mon;
+                BannerWindow.Position = pos;
+                _banner?.Hide();
+                (_banner ??= new BannerWindow()).Show(new Banner("Así se verán tus avisos", "Toca para abrir · el botón ↩ responde sin abrir nada", "#25D366", "\uE8BD", null, null, _ => Task.CompletedTask));
+                BannerWindow.Monitor = om;
+                BannerWindow.Position = op;
             };
             _settings.RecordingChanged += rec =>
             {

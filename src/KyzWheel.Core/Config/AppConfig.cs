@@ -12,6 +12,12 @@ public sealed record AppConfig(int Version, string GlobalHotkey, IReadOnlyList<S
 
     public bool ToolsOffered { get; init; }
 
+    public bool Welcomed { get; init; }
+
+    public string NotifyMonitor { get; init; } = "cursor";
+
+    public string NotifyPosition { get; init; } = "top-center";
+
     public string? GoogleClientId { get; init; }
 
     public string? GoogleClientSecret { get; init; }

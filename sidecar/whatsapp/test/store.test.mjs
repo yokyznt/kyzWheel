@@ -151,3 +151,16 @@ test('recent messages across chats newest first with chat names', () => {
   assert.equal(r[1].chatName, 'Ana')
   assert.equal(r[1].file.media, undefined)
 })
+
+test('replies keep the quoted message id, text and sender', () => {
+  const s = createStore(join(mkdtempSync(join(tmpdir(), 'wa-')), 's.json'))
+  s.upsertContacts([{ id: 'ana@s.whatsapp.net', name: 'Ana' }])
+  s.upsertMessages([msg('g@g.us', 'q1', 100, { conversation: 'vamos al cine?' }, { key: { remoteJid: 'g@g.us', id: 'q1', fromMe: false, participant: 'ana@s.whatsapp.net' } })])
+  s.upsertMessages([msg('g@g.us', 'r1', 110, { extendedTextMessage: { text: 'sí', contextInfo: { stanzaId: 'q1', participant: 'ana@s.whatsapp.net', quotedMessage: { conversation: 'vamos al cine?' } } } })])
+  s.upsertMessages([msg('g@g.us', 'r2', 120, { stickerMessage: { mimetype: 'image/webp', contextInfo: { stanzaId: 'q1', participant: 'ana@s.whatsapp.net', quotedMessage: { conversation: 'vamos al cine?' } } } })])
+  const all = s.recentMessages(10)
+  const r1 = all.find((m) => m.id === 'r1')
+  assert.deepEqual(r1.quote, { id: 'q1', text: 'vamos al cine?', sender: 'Ana' })
+  assert.equal(all.find((m) => m.id === 'r2').quote.id, 'q1')
+  assert.equal(all.find((m) => m.id === 'q1').quote, undefined)
+})

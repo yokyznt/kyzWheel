@@ -21,6 +21,9 @@ public sealed record WaFile(string FileName, string Mime, long Size, string Mess
 public sealed record WaMessage(string Id, bool FromMe, string Text, DateTimeOffset Ts, WaFile? File, string? Sender)
 {
     public string Caption { get; init; } = "";
+    public string? QuoteId { get; init; }
+    public string? QuoteText { get; init; }
+    public string? QuoteSender { get; init; }
 }
 
 public sealed record WaContact(string Jid, string Name);
@@ -62,7 +65,14 @@ public static class WaJson
     {
         var id = S(e, "id");
         WaFile? file = e.TryGetProperty("file", out var f) && f.ValueKind == JsonValueKind.Object ? File(f, jid, id) : null;
-        return new WaMessage(id, B(e, "fromMe"), S(e, "text"), Ts(e, "ts"), file, e.TryGetProperty("sender", out var s) && s.ValueKind == JsonValueKind.String ? s.GetString() : null) { Caption = S(e, "caption") };
+        var q = e.TryGetProperty("quote", out var qe) && qe.ValueKind == JsonValueKind.Object ? qe : (JsonElement?)null;
+        return new WaMessage(id, B(e, "fromMe"), S(e, "text"), Ts(e, "ts"), file, e.TryGetProperty("sender", out var s) && s.ValueKind == JsonValueKind.String ? s.GetString() : null)
+        {
+            Caption = S(e, "caption"),
+            QuoteId = q is { } a ? N(a, "id") : null,
+            QuoteText = q is { } b ? N(b, "text") : null,
+            QuoteSender = q is { } c ? N(c, "sender") : null,
+        };
     }
 
     public static WaFeedItem Feed(JsonElement e)

@@ -42,13 +42,16 @@ public sealed class SettingsWindow : GlassWindow
     private static readonly (SlotType Type, string Name)[] Types =
     [
         (SlotType.WhatsApp, "WhatsApp"), (SlotType.Mail, "Correo"), (SlotType.Converter, "Convertidor"),
-        (SlotType.LaunchApp, "Abrir app"), (SlotType.OpenUrl, "Abrir URL"), (SlotType.SendToFolder, "Enviar a carpeta"), (SlotType.Clipboard, "Portapapeles"), (SlotType.Phone, "Celular"), (SlotType.Messages, "Mensajes"),
+        (SlotType.LaunchApp, "Abrir app"), (SlotType.OpenUrl, "Abrir URL"), (SlotType.SendToFolder, "Enviar a carpeta"), (SlotType.Clipboard, "Portapapeles"), (SlotType.Phone, "Celular"), (SlotType.Messages, "Mensajes"), (SlotType.Capture, "Captura"), (SlotType.Projects, "Proyectos"), (SlotType.Hermes, "Hermes"), (SlotType.Music, "Música"),
     ];
 
     private readonly Func<AppConfig, IReadOnlyList<string>> _apply;
     private readonly AppConfig _base;
     private readonly List<MailAccount> _accounts;
     private string _themeId;
+    private readonly ComboBox _notifyMonitor = new() { Header = "Pantalla", MinWidth = 260 };
+    private readonly ComboBox _notifyPos = new() { Header = "Lugar", MinWidth = 200 };
+    public event Action<string, string>? TestNotification;
     private readonly GridView _themes = new() { SelectionMode = ListViewSelectionMode.Single, IsItemClickEnabled = true };
     private readonly StackPanel _accountList = new() { Spacing = 6 };
 
@@ -129,6 +132,21 @@ public sealed class SettingsWindow : GlassWindow
         var root = new StackPanel { Spacing = 16, Padding = new Thickness(24, 44, 24, 24) };
         root.Children.Add(Heading("Ajustes"));
         root.Children.Add(Card(Stack(Heading("Tema", 15), Muted("Cambia el aspecto de la rueda y las ventanas. Se ve al instante."), _themes)));
+        var shots = KyzWheel.App.Shell.Screens.All();
+        _notifyMonitor.Items.Add(new ComboBoxItem { Content = "Donde esté el mouse", Tag = "cursor" });
+        _notifyMonitor.Items.Add(new ComboBoxItem { Content = "Pantalla principal", Tag = "primary" });
+        for (var i = 0; i < shots.Count; i++) _notifyMonitor.Items.Add(new ComboBoxItem { Content = KyzWheel.App.Shell.Screens.Describe(shots[i], i + 1), Tag = (i + 1).ToString() });
+        _notifyMonitor.SelectedItem = _notifyMonitor.Items.OfType<ComboBoxItem>().FirstOrDefault(i => (string)i.Tag == _base.NotifyMonitor) ?? _notifyMonitor.Items[0];
+        foreach (var (tag, label) in new[] { ("top-center", "Arriba al centro"), ("top-right", "Arriba a la derecha"), ("top-left", "Arriba a la izquierda"), ("bottom-right", "Abajo a la derecha"), ("bottom-center", "Abajo al centro"), ("bottom-left", "Abajo a la izquierda") })
+            _notifyPos.Items.Add(new ComboBoxItem { Content = label, Tag = tag });
+        _notifyPos.SelectedItem = _notifyPos.Items.OfType<ComboBoxItem>().FirstOrDefault(i => (string)i.Tag == _base.NotifyPosition) ?? _notifyPos.Items[0];
+        var notifyRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 12 };
+        notifyRow.Children.Add(_notifyMonitor);
+        notifyRow.Children.Add(_notifyPos);
+        var test = new Button { Content = "Probar", VerticalAlignment = VerticalAlignment.Bottom };
+        test.Click += (_, _) => TestNotification?.Invoke((_notifyMonitor.SelectedItem as ComboBoxItem)?.Tag as string ?? "cursor", (_notifyPos.SelectedItem as ComboBoxItem)?.Tag as string ?? "top-center");
+        notifyRow.Children.Add(test);
+        root.Children.Add(Card(Stack(Heading("Notificaciones", 15), Muted("Dónde aparecen los avisos de WhatsApp y correo."), notifyRow)));
         root.Children.Add(Card(Stack(Heading("Atajo global", 15), Muted("Abre la rueda donde esté el cursor."), _global)));
         var listButtons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
         listButtons.Children.Add(_add);
@@ -184,7 +202,9 @@ public sealed class SettingsWindow : GlassWindow
         preview.Children.Add(new Microsoft.UI.Xaml.Shapes.Ellipse { Width = 8, Height = 8, Fill = new SolidColorBrush(KyzWheel.App.Shell.Theme.Argb(t.Accent)) });
         var s = new StackPanel { Spacing = 8, Width = 108, Padding = new Thickness(6, 10, 6, 8), Tag = t.Id };
         s.Children.Add(preview);
-        s.Children.Add(new TextBlock { Text = t.Name, FontSize = 12, HorizontalAlignment = HorizontalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis });
+        s.Children.Add(new TextBlock { Text = t.Upper ? t.Name.ToUpperInvariant() : t.Name, FontFamily = KyzWheel.App.Shell.Ui.FontFor(t.Font), FontWeight = Microsoft.UI.Text.FontWeights.Bold, CharacterSpacing = t.Spacing, FontSize = 12.5, HorizontalAlignment = HorizontalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis });
+        s.Children.Add(new TextBlock { Text = t.Tagline, FontSize = 10.5, Opacity = 0.65, TextAlignment = TextAlignment.Center, TextWrapping = TextWrapping.Wrap, MaxLines = 2, HorizontalAlignment = HorizontalAlignment.Center });
+        s.Width = 124;
         return s;
     }
 
@@ -343,6 +363,10 @@ public sealed class SettingsWindow : GlassWindow
             SlotType.Clipboard => "\uE77F",
             SlotType.Phone => "\uE8EA",
             SlotType.Messages => "\uE8F2",
+            SlotType.Capture => "\uE722",
+            SlotType.Projects => "\uE943",
+            SlotType.Hermes => "\uE99A",
+            SlotType.Music => "\uE8D6",
             SlotType.OpenUrl => "\uE774",
             _ => "\uE8B7",
         };
@@ -393,8 +417,17 @@ public sealed class SettingsWindow : GlassWindow
             _status.Text = $"Falta el destino de {missing.Name}";
             return;
         }
-        var cfg = new AppConfig(1, _global.Value ?? "Ctrl+Alt+Space", _slots.Select(s => s.ToSlot()).ToList(),
-            KyzWheel.Core.Theming.Themes.Find(_themeId).Accent, _autostart.IsOn) { MailAccounts = _accounts.ToList(), ThemeId = _themeId, GoogleClientId = _base.GoogleClientId, GoogleClientSecret = _base.GoogleClientSecret, PhoneSlotOffered = _base.PhoneSlotOffered, MessagesMerged = _base.MessagesMerged };
+        var cfg = _base with
+        {
+            GlobalHotkey = _global.Value ?? "Ctrl+Alt+Shift",
+            Slots = _slots.Select(s => s.ToSlot()).ToList(),
+            AccentHex = KyzWheel.Core.Theming.Themes.Find(_themeId).Accent,
+            StartWithWindows = _autostart.IsOn,
+            MailAccounts = _accounts.ToList(),
+            ThemeId = _themeId,
+            NotifyMonitor = (_notifyMonitor.SelectedItem as ComboBoxItem)?.Tag as string ?? "cursor",
+            NotifyPosition = (_notifyPos.SelectedItem as ComboBoxItem)?.Tag as string ?? "top-center",
+        };
         var errors = ConfigStore.Validate(cfg);
         if (errors.Count == 0) errors = _apply(cfg);
         _status.Text = errors.Count == 0 ? "Guardado" : string.Join(" · ", errors);

@@ -41,7 +41,7 @@ public sealed class MailPanel : Grid
         _rows.Children.Clear();
         if (_service.Accounts.Count == 0)
         {
-            _rows.Children.Add(Empty("\uE715", "Vincula tu primera cuenta", "Gmail, Outlook, Yahoo, iCloud o cualquier correo con IMAP. Usa una contraseña de aplicación.", "Agregar cuenta", _addAccount));
+            _rows.Children.Add(Empty("\uE715", "Conecta tu Gmail", "Un clic: eliges tu cuenta de Google y listo. Otros correos, en Ajustes › Cuentas.", "Conectar con Google", _addAccount));
             return;
         }
         var top = _service.Inbox.Top();

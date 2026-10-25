@@ -22,6 +22,10 @@ public static class Ui
     public static readonly FontFamily Icons = new("Segoe Fluent Icons,Segoe MDL2 Assets");
     public static readonly FontFamily Font = new("ms-appx:///Assets/Fonts/Outfit.ttf#Outfit");
 
+    private static readonly Dictionary<string, FontFamily> Fonts = new();
+
+    public static FontFamily FontFor(string? name) => string.IsNullOrEmpty(name) || name == "Outfit" ? Font : Fonts.TryGetValue(name, out var f) ? f : Fonts[name] = new FontFamily(name + ",Segoe UI Variable Display,Segoe UI");
+
     public static Windows.UI.Color Parse(string hex, byte alpha = 0xFF)
     {
         var h = hex.TrimStart('#');

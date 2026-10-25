@@ -450,7 +450,7 @@ public sealed class WhatsAppPanel : Grid
 
     private static void OpenPath(string path) => System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(path) { UseShellExecute = true });
 
-    private UIElement MediaView(WaFile f)
+    internal static UIElement MediaView(WhatsAppBridge _wa, TextBlock _note, WaFile f)
     {
         var host = new Grid();
         switch (f.Kind)
@@ -608,7 +608,7 @@ public sealed class WhatsAppPanel : Grid
         return host;
     }
 
-    private static string NameColor(string name)
+    internal static string NameColor(string name)
     {
         string[] palette = ["#38BDF8", "#F472B6", "#FBBF24", "#A78BFA", "#34D399", "#FB923C", "#F87171", "#60A5FA"];
         return palette[(int)((uint)name.GetHashCode() % palette.Length)];
@@ -623,7 +623,8 @@ public sealed class WhatsAppPanel : Grid
     {
         var s = new StackPanel { Spacing = 4 };
         if (group && !m.FromMe && !string.IsNullOrEmpty(m.Sender)) s.Children.Add(Ui.Label(m.Sender, 11, Ui.Parse(NameColor(m.Sender)), bold: true));
-        if (m.File is { } file) s.Children.Add(MediaView(file));
+        if (Quote(m.QuoteSender, m.QuoteText) is { } quote) s.Children.Add(quote);
+        if (m.File is { } file) s.Children.Add(MediaView(_wa, _note, file));
         var body = m.File is null ? m.Text : m.Caption;
         if (!string.IsNullOrEmpty(body))
         {
@@ -642,6 +643,23 @@ public sealed class WhatsAppPanel : Grid
             CornerRadius = m.FromMe ? new CornerRadius(14, 14, 4, 14) : new CornerRadius(14, 14, 14, 4),
             Background = Ui.Brush(sticker ? Colors.Transparent : m.FromMe ? Ui.Parse("#1F6B45") : ColorHelper.FromArgb(0x1F, 0xFF, 0xFF, 0xFF)),
             HorizontalAlignment = m.FromMe ? HorizontalAlignment.Right : HorizontalAlignment.Left,
+        };
+    }
+
+    internal static UIElement? Quote(string? who, string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return null;
+        var q = new StackPanel { Spacing = 1 };
+        if (!string.IsNullOrEmpty(who)) q.Children.Add(Ui.Label(who, 10.5, Ui.Parse(NameColor(who)), bold: true));
+        q.Children.Add(new TextBlock { Text = text, FontSize = 11.5, Foreground = Ui.Brush(Ui.Secondary), TextWrapping = TextWrapping.Wrap, MaxLines = 2, TextTrimming = TextTrimming.CharacterEllipsis, IsTextSelectionEnabled = true });
+        return new Border
+        {
+            Child = q,
+            Padding = new Thickness(8, 4, 8, 5),
+            CornerRadius = new CornerRadius(6),
+            BorderThickness = new Thickness(3, 0, 0, 0),
+            BorderBrush = Ui.Brush(Ui.Parse(string.IsNullOrEmpty(who) ? "#25D366" : NameColor(who))),
+            Background = Ui.Brush(ColorHelper.FromArgb(0x18, 0xFF, 0xFF, 0xFF)),
         };
     }
 }
