@@ -75,6 +75,9 @@ export function createConnection({ authDir, store, emit, downloads, cacheDir, lo
       store.upsertChats(c)
       emit('chats.changed', {})
     })
+    sock.ev.on('chats.lock', (c) => {
+      if (c?.id) store.upsertChats([{ id: c.id, locked: !!c.locked }])
+    })
     sock.ev.on('chats.update', (c) => {
       store.upsertChats(c)
       emit('chats.changed', {})
@@ -98,7 +101,7 @@ export function createConnection({ authDir, store, emit, downloads, cacheDir, lo
     sock.ev.on('messages.upsert', ({ messages, type }) => {
       remember(messages)
       const changed = store.upsertMessages(messages, { countUnread: type === 'notify' })
-      for (const c of changed) if (type === 'notify') emit('message.new', c)
+      for (const c of changed) if (type === 'notify') emit('message.new', { ...c, flags: store.flags(c.chat) })
       if (changed.length) emit('chats.changed', {})
     })
   }
@@ -188,6 +191,24 @@ export function createConnection({ authDir, store, emit, downloads, cacheDir, lo
           ? { video: media, caption, mimetype }
           : { document: media, fileName: basename(path), mimetype, caption }
       const sent = await enqueue(() => sock.sendMessage(jid, content))
+      remember([sent])
+      store.upsertMessages([sent])
+      return { id: sent?.key?.id }
+    },
+    async recentStickers({ limit = 24 } = {}) {
+      const out = []
+      for (const f of store.recentStickers(limit * 2)) {
+        try {
+          const r = await this.media({ jid: f.jid, messageId: f.messageId })
+          if (r?.path && !out.some((x) => x.id === f.key)) out.push({ id: f.key, path: r.path })
+        } catch {}
+        if (out.length >= limit) break
+      }
+      return out
+    },
+    async sendSticker({ jid, path }) {
+      requireOpen()
+      const sent = await enqueue(() => sock.sendMessage(jid, { sticker: readFileSync(path) }))
       remember([sent])
       store.upsertMessages([sent])
       return { id: sent?.key?.id }

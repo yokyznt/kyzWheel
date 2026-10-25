@@ -1,4 +1,4 @@
-param([string]$Version = "0.6.2", [switch]$Pack, [switch]$Upload)
+﻿param([string]$Version = "0.7.0", [switch]$Pack, [switch]$Upload)
 $ErrorActionPreference = "Stop"
 $root = Split-Path $PSScriptRoot -Parent
 $out = Join-Path $root "publish"
@@ -31,6 +31,12 @@ if (-not (Test-Path $google)) {
   }
 }
 if (Test-Path $google) { Copy-Item $google (Join-Path $root "src\KyzWheel.App\Assets\google.json") -Force; Write-Host "google client bundled" } else { Write-Host "google client NOT bundled" }
+$tgDst = Join-Path $root "src\KyzWheel.App\Assets\telegram.json"
+$tgSrc = @((Join-Path $root "build\telegram.json"), (Join-Path $env:APPDATA "kyzWheel\im-auth\telegram.json")) | Where-Object { Test-Path $_ } | Select-Object -First 1
+if ($tgSrc) {
+  $tg = Get-Content $tgSrc -Raw | ConvertFrom-Json
+  if ($tg.apiId -and $tg.apiHash) { @{ apiId = $tg.apiId; apiHash = $tg.apiHash } | ConvertTo-Json | Set-Content $tgDst -Encoding UTF8; Write-Host "telegram app bundled" }
+} else { Write-Host "telegram app NOT bundled" }
 dotnet publish "$root\src\KyzWheel.App\KyzWheel.App.csproj" -c Release -r win-x64 --self-contained -p:Version=$Version -o $out
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 dotnet publish "$root\src\KyzWheel.Guard\KyzWheel.Guard.csproj" -c Release -r win-x64 --self-contained -p:Version=$Version -o $out

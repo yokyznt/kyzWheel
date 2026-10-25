@@ -9,7 +9,7 @@ public sealed class TranslatePanel : StackPanel
 {
     private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(15) };
     private readonly TextBox _src = new() { AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, MinHeight = 70, MaxHeight = 160, CornerRadius = new CornerRadius(10) };
-    private readonly TextBlock _out = new() { TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true, FontSize = 14, FontFamily = Ui.Font };
+    private readonly TextBlock _out = Ui.CopyLine(new TextBlock { TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true, FontSize = 14, FontFamily = Ui.Font });
     private readonly TextBlock _meta;
     private readonly Func<string, Task>? _toPhone;
     private string _target = "es";

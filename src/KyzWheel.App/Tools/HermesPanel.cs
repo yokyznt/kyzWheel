@@ -9,7 +9,7 @@ namespace KyzWheel.App.Tools;
 public sealed class HermesPanel : Grid
 {
     private readonly TextBox _q = new() { PlaceholderText = "Pregúntale a Hermes…", AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, MinHeight = 64, MaxHeight = 140, CornerRadius = new CornerRadius(10) };
-    private readonly TextBlock _answer = new() { TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true, FontSize = 13, FontFamily = Ui.Font };
+    private readonly TextBlock _answer = Ui.CopyLine(new TextBlock { TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true, FontSize = 13, FontFamily = Ui.Font });
     private readonly ProgressRing _ring = new() { IsActive = false, Width = 18, Height = 18 };
     private readonly Button _ask;
     private readonly IReadOnlyList<string> _files;

@@ -164,3 +164,15 @@ test('replies keep the quoted message id, text and sender', () => {
   assert.equal(all.find((m) => m.id === 'r2').quote.id, 'q1')
   assert.equal(all.find((m) => m.id === 'q1').quote, undefined)
 })
+
+test('chat flags for archived, muted and locked chats', () => {
+  const s = createStore(join(mkdtempSync(join(tmpdir(), 'wa-')), 's.json'))
+  s.upsertChats([{ id: 'a@s.whatsapp.net', archived: true }, { id: 'b@s.whatsapp.net', muteEndTime: -1 }, { id: 'c@s.whatsapp.net', muteEndTime: 1 }, { id: 'd@s.whatsapp.net', locked: true }])
+  assert.deepEqual(s.flags('a@s.whatsapp.net'), { archived: true, muted: false, locked: false })
+  assert.equal(s.flags('b@s.whatsapp.net').muted, true)
+  assert.equal(s.flags('c@s.whatsapp.net').muted, false)
+  assert.equal(s.flags('d@s.whatsapp.net').locked, true)
+  s.upsertChats([{ id: 'a@s.whatsapp.net', archived: false }])
+  assert.equal(s.flags('a@s.whatsapp.net').archived, false)
+  assert.deepEqual(s.flags('zz@s.whatsapp.net'), { archived: false, muted: false, locked: false })
+})

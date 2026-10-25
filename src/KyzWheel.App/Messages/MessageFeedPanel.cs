@@ -13,7 +13,14 @@ namespace KyzWheel.App.Messages;
 
 public sealed record FeedLine(string? Who, string Text, DateTimeOffset When, int Depth, bool Nested, string? QuoteWho, string? QuoteText, KyzWheel.Core.WhatsApp.WaFile? File);
 
-public sealed record FeedEntry(string Key, string Name, string? Context, string Body, DateTimeOffset When, string ColorHex, bool Unread, string? AvatarKey = null, string? Thumb = null, Action? Open = null, string? Account = null, IReadOnlyList<FeedLine>? Lines = null, string Signature = "");
+public sealed record FeedEntry(string Key, string Name, string? Context, string Body, DateTimeOffset When, string ColorHex, bool Unread, string? AvatarKey = null, string? Thumb = null, Action? Open = null, string? Account = null, IReadOnlyList<FeedLine>? Lines = null, string Signature = "")
+{
+    public string? Service { get; init; }
+    public Func<string, Task>? Reply { get; init; }
+    public Func<Task<IReadOnlyList<KyzWheel.Core.Messaging.ImSticker>>>? Stickers { get; init; }
+    public Func<KyzWheel.Core.Messaging.ImSticker, Task>? SendSticker { get; init; }
+    public Func<Task>? Call { get; init; }
+}
 
 public sealed class MessageFeedPanel : Grid
 {
@@ -26,6 +33,35 @@ public sealed class MessageFeedPanel : Grid
     private readonly TextBox _search = new() { PlaceholderText = "Buscar", CornerRadius = new CornerRadius(10) };
     private readonly HashSet<string> _seen = new();
     private IReadOnlyList<FeedEntry> _entries = [];
+    private readonly StackPanel _chips = new() { Orientation = Orientation.Horizontal, Spacing = 6 };
+    private string? _filter;
+    private string? _replyOpen;
+    private bool _pending;
+
+    public event Action<string?>? FilterChanged;
+
+    public void SetFilters(IReadOnlyList<KyzWheel.Core.Messaging.ImService> services, string? selected)
+    {
+        _filter = selected;
+        _chips.Children.Clear();
+        void Chip(string? id, string label, string color, string? glyph)
+        {
+            var on = _filter == id;
+            var content = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 5 };
+            if (glyph is not null) content.Children.Add(Ui.Icon(glyph, 11, on ? Colors.Black : Ui.Parse(color)));
+            content.Children.Add(new TextBlock { Text = label, FontSize = 12, FontFamily = Ui.Font, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Foreground = Ui.Brush(on ? Colors.Black : Ui.Text) });
+            var b = new Button { Content = content, CornerRadius = new CornerRadius(14), Padding = new Thickness(10, 4, 10, 4), Background = Ui.Brush(on ? Ui.Parse(color) : ColorHelper.FromArgb(0x1C, 0xFF, 0xFF, 0xFF)), BorderThickness = new Thickness(0) };
+            b.Click += (_, _) =>
+            {
+                SetFilters(services, id);
+                FilterChanged?.Invoke(id);
+                Render(false);
+            };
+            _chips.Children.Add(b);
+        }
+        Chip(null, "Todos", "#FFFFFF", null);
+        foreach (var sv in services) Chip(sv.Id, sv.Name, sv.ColorHex, sv.Glyph);
+    }
 
     public MessageFeedPanel(IReadOnlyList<FeedEntry> entries, Toasts toasts, string empty, Func<FeedEntry, Task<string?>>? avatar = null, Func<KyzWheel.Core.WhatsApp.WaFile, UIElement>? media = null)
     {
@@ -38,7 +74,10 @@ public sealed class MessageFeedPanel : Grid
         RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
         RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         _search.TextChanged += (_, _) => Render(false);
-        Children.Add(_search);
+        var top = new StackPanel { Spacing = 8 };
+        top.Children.Add(new ScrollViewer { Content = _chips, HorizontalScrollBarVisibility = ScrollBarVisibility.Hidden, HorizontalScrollMode = ScrollMode.Enabled, VerticalScrollMode = ScrollMode.Disabled });
+        top.Children.Add(_search);
+        Children.Add(top);
         var scroll = new ScrollViewer { Content = _rows, Margin = new Thickness(-8, 0, -8, 0), Padding = new Thickness(8, 0, 8, 0) };
         SetRow(scroll, 1);
         Children.Add(scroll);
@@ -51,13 +90,18 @@ public sealed class MessageFeedPanel : Grid
     public void Update(IReadOnlyList<FeedEntry> entries, bool animate = true)
     {
         _entries = entries;
+        if (_replyOpen is not null)
+        {
+            _pending = true;
+            return;
+        }
         Render(animate);
     }
 
     private void Render(bool animate)
     {
         var q = _search.Text.Trim();
-        var list = _entries.Where(e => q.Length == 0 || $"{e.Name} {e.Context} {e.Body} {e.Account} {string.Join(' ', e.Lines?.Select(l => l.Who + " " + l.Text) ?? [])}".Contains(q, StringComparison.OrdinalIgnoreCase)).ToList();
+        var list = _entries.Where(e => _filter is null || e.Service == _filter).Where(e => q.Length == 0 || $"{e.Name} {e.Context} {e.Body} {e.Account} {string.Join(' ', e.Lines?.Select(l => l.Who + " " + l.Text) ?? [])}".Contains(q, StringComparison.OrdinalIgnoreCase)).ToList();
         _rows.Children.Clear();
         if (list.Count == 0) _rows.Children.Add(KyzWheel.App.Mail.MailPanel.Empty("\uE8F2", q.Length > 0 ? "Sin resultados" : "Sin mensajes", q.Length > 0 ? "Prueba con otra palabra." : _empty, null, null));
         var first = _seen.Count == 0;
@@ -69,7 +113,7 @@ public sealed class MessageFeedPanel : Grid
         }
     }
 
-    private static TextBlock Text(string text, double size, Windows.UI.Color color, bool bold = false, int maxLines = 1) => new()
+    private static TextBlock Text(string text, double size, Windows.UI.Color color, bool bold = false, int maxLines = 1) => Ui.CopyLine(new TextBlock
     {
         Text = text,
         FontSize = size,
@@ -80,7 +124,7 @@ public sealed class MessageFeedPanel : Grid
         TextTrimming = TextTrimming.CharacterEllipsis,
         MaxLines = maxLines,
         IsTextSelectionEnabled = true,
-    };
+    });
 
     private UIElement Card(FeedEntry e)
     {
@@ -133,8 +177,17 @@ public sealed class MessageFeedPanel : Grid
         actions.Children.Add(Ui.IconButton("\uE722", "Captura del mensaje", () => _ = CaptureAsync(card, e)));
         if (e.Open is { } o) actions.Children.Add(Ui.IconButton("\uE740", "Abrir completo", o));
         var wrap = new StackPanel { Spacing = 0 };
+        var tray = new StackPanel { Spacing = 6, Margin = new Thickness(12, 4, 2, 0) };
+        if (e.Call is { } call) actions.Children.Insert(0, Ui.IconButton("\uE717", "Llamar (abre la app)", () => _ = Run(call, "Abriendo la app para llamar…")));
+        if (e.Stickers is not null && e.SendSticker is not null) actions.Children.Insert(0, Ui.IconButton("\uE76E", "Mandar sticker", () => _ = StickersAsync(e, tray)));
+        if (e.Reply is not null)
+        {
+            actions.Children.Insert(0, Ui.IconButton("\uE97A", "Responder", () => ReplyBox(e, tray)));
+            if (_replyOpen == e.Key) ReplyBox(e, tray, false);
+        }
         wrap.Children.Add(card);
         wrap.Children.Add(actions);
+        wrap.Children.Add(tray);
         return wrap;
     }
 
@@ -164,6 +217,106 @@ public sealed class MessageFeedPanel : Grid
         }
         if (lines.Count > 12) list.Children.Insert(0, Ui.Label($"+{lines.Count - 12} anteriores", 10.5, Ui.Tertiary));
         return list;
+    }
+
+    private async Task Run(Func<Task> act, string busy)
+    {
+        _note.Text = busy;
+        try
+        {
+            await act();
+            _note.Text = "";
+        }
+        catch (Exception ex)
+        {
+            _note.Text = "No se pudo: " + ex.Message;
+        }
+    }
+
+    private void ReplyBox(FeedEntry e, StackPanel tray, bool focus = true)
+    {
+        if (tray.Children.OfType<Grid>().Any(g => (string?)g.Tag == "reply"))
+        {
+            tray.Children.Clear();
+            _replyOpen = null;
+            if (_pending)
+            {
+                _pending = false;
+                Render(true);
+            }
+            return;
+        }
+        _replyOpen = e.Key;
+        var g = new Grid { ColumnSpacing = 6, Tag = "reply" };
+        g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        g.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        var box = new TextBox { PlaceholderText = "Responder a " + e.Name + "…", CornerRadius = new CornerRadius(10), AcceptsReturn = false, TextWrapping = TextWrapping.Wrap, MaxHeight = 120 };
+        g.Children.Add(box);
+        async Task Send()
+        {
+            var text = box.Text.Trim();
+            if (text.Length == 0) return;
+            box.IsEnabled = false;
+            try
+            {
+                await e.Reply!(text);
+                box.Text = "";
+                _note.Text = "Enviado a " + e.Name;
+            }
+            catch (Exception ex)
+            {
+                _note.Text = "No se envió: " + ex.Message;
+            }
+            box.IsEnabled = true;
+            box.Focus(FocusState.Programmatic);
+        }
+        var send = Ui.IconButton("\uE724", "Enviar", () => _ = Send());
+        Grid.SetColumn(send, 1);
+        g.Children.Add(send);
+        box.KeyDown += (_, k) =>
+        {
+            if (k.Key == Windows.System.VirtualKey.Enter) { k.Handled = true; _ = Send(); }
+        };
+        tray.Children.Clear();
+        tray.Children.Add(g);
+        if (focus) box.Loaded += (_, _) => box.Focus(FocusState.Programmatic);
+    }
+
+    private async Task StickersAsync(FeedEntry e, StackPanel tray)
+    {
+        if (tray.Children.OfType<GridView>().Any())
+        {
+            tray.Children.Clear();
+            return;
+        }
+        _note.Text = "Cargando stickers…";
+        IReadOnlyList<KyzWheel.Core.Messaging.ImSticker> list;
+        try
+        {
+            list = await e.Stickers!();
+        }
+        catch (Exception ex)
+        {
+            _note.Text = "No hay stickers: " + ex.Message;
+            return;
+        }
+        _note.Text = list.Count == 0 ? "Aún no hay stickers recientes en esta app. Los que te manden aparecerán aquí." : "";
+        if (list.Count == 0) return;
+        var grid = new GridView { SelectionMode = ListViewSelectionMode.None, IsItemClickEnabled = true, MaxHeight = 220 };
+        foreach (var st in list)
+        {
+            if (!File.Exists(st.Path)) continue;
+            grid.Items.Add(new Image { Width = 64, Height = 64, Tag = st, Source = new BitmapImage(new Uri(st.Path)) { DecodePixelWidth = 128 } });
+        }
+        grid.ItemClick += async (_, a) =>
+        {
+            if (a.ClickedItem is not Image { Tag: KyzWheel.Core.Messaging.ImSticker st }) return;
+            tray.Children.Clear();
+            await Run(() => e.SendSticker!(st), "Enviando sticker…");
+            if (_note.Text.Length == 0) _note.Text = "Sticker enviado a " + e.Name;
+        };
+        tray.Children.Clear();
+        tray.Children.Add(grid);
     }
 
     private static Image? Thumb(string b64)

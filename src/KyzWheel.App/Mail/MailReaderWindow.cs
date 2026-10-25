@@ -33,7 +33,7 @@ public sealed class MailReaderWindow : GlassWindow
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
         var subject = Ui.Label(mail.Subject, 21, bold: true, maxLines: 2);
-        subject.IsTextSelectionEnabled = true;
+        Ui.CopyLine(subject);
         root.Children.Add(subject);
 
         var meta = new Grid { ColumnSpacing = 12 };
@@ -43,10 +43,10 @@ public sealed class MailReaderWindow : GlassWindow
         meta.Children.Add(Ui.Avatar(mail.FromName, color, 40));
         var who = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
         var from = Ui.Label(mail.FromName, 14, bold: true);
-        from.IsTextSelectionEnabled = true;
+        Ui.CopyLine(from);
         who.Children.Add(from);
         var addr = Ui.Label($"{mail.FromAddress} · para {mail.Account} · {mail.Date.ToLocalTime():d MMM yyyy, HH:mm}", 12, Ui.Tertiary);
-        addr.IsTextSelectionEnabled = true;
+        Ui.CopyLine(addr);
         who.Children.Add(addr);
         Grid.SetColumn(who, 1);
         meta.Children.Add(who);
