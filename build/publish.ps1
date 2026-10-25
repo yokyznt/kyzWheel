@@ -1,4 +1,4 @@
-﻿param([string]$Version = "0.7.0", [switch]$Pack, [switch]$Upload)
+﻿param([string]$Version = "0.7.1", [switch]$Pack, [switch]$Upload)
 $ErrorActionPreference = "Stop"
 $root = Split-Path $PSScriptRoot -Parent
 $out = Join-Path $root "publish"

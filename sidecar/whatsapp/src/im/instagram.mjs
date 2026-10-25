@@ -1,44 +1,71 @@
-import { IgApiClient, IgLoginTwoFactorRequiredError, IgCheckpointError } from 'instagram-private-api'
+import { randomUUID } from 'node:crypto'
 import { createAdapterBase, placeholder } from './common.mjs'
 import { RpcError } from '../protocol.mjs'
 
-const KIND = { media: 'photo', media_share: 'post', clip: 'reel', reel_share: 'reel', story_share: 'post', voice_media: 'voice', animated_media: 'gif', like: 'like', raven_media: 'photo', video_call_event: 'call', location: 'location', profile: 'contact' }
+const KIND = { media: 'photo', media_share: 'post', clip: 'reel', reel_share: 'reel', story_share: 'post', voice_media: 'voice', animated_media: 'gif', like: 'like', raven_media: 'photo', video_call_event: 'call', location: 'location', profile: 'contact', xma_media_share: 'post', xma_clip: 'reel', xma_story_share: 'post' }
+const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36'
+const APP_ID = '936619743392459'
+const BASE = 'https://www.instagram.com/api/v1/'
+
+export function cookieHeader(c) {
+  return Object.entries(c ?? {}).filter(([, v]) => v).map(([k, v]) => `${k}=${v}`).join('; ')
+}
+
+export function itemText(it) {
+  if (it.item_type === 'text') return it.text ?? ''
+  if (it.item_type === 'link') return it.link?.text ?? ''
+  return placeholder(KIND[it.item_type] ?? 'post')
+}
+
+export function parseInbox(body, me) {
+  const out = []
+  for (const t of body?.inbox?.threads ?? []) {
+    const users = new Map((t.users ?? []).map((u) => [String(u.pk ?? u.pk_id), u.full_name || u.username]))
+    const name = t.thread_title || [...users.values()].join(', ') || 'Instagram'
+    for (const it of (t.items ?? []).slice(0, 10)) {
+      const text = itemText(it)
+      if (!text) continue
+      const fromMe = String(it.user_id) === String(me)
+      out.push({ chat: { id: String(t.thread_id), name, isGroup: !!t.is_group }, msg: { id: String(it.item_id), fromMe, sender: t.is_group && !fromMe ? users.get(String(it.user_id)) ?? null : null, text, ts: Math.floor(Number(it.timestamp) / 1e6) } })
+    }
+  }
+  return out
+}
 
 export function createInstagram({ authDir, store, emit }) {
   const base = createAdapterBase('instagram', { authDir, emit })
-  let ig = null
-  let me = null
+  let cookies = null
   let timer = null
   let firstPoll = true
 
-  async function persist(username) {
-    const state = await ig.state.serialize()
-    delete state.constants
-    base.save({ username, state })
-  }
-
-  function itemText(it) {
-    if (it.item_type === 'text') return it.text ?? ''
-    if (it.item_type === 'link') return it.link?.text ?? ''
-    return placeholder(KIND[it.item_type] ?? 'post')
+  async function api(path, form) {
+    const headers = { 'User-Agent': UA, 'X-IG-App-ID': APP_ID, 'X-Requested-With': 'XMLHttpRequest', 'X-CSRFToken': cookies.csrftoken ?? '', Referer: 'https://www.instagram.com/direct/inbox/', Origin: 'https://www.instagram.com', Cookie: cookieHeader(cookies), Accept: '*/*' }
+    const init = { headers, redirect: 'manual' }
+    if (form) {
+      init.method = 'POST'
+      headers['Content-Type'] = 'application/x-www-form-urlencoded'
+      init.body = new URLSearchParams(form).toString()
+    }
+    const res = await fetch(BASE + path, init)
+    const text = await res.text()
+    let body = null
+    try { body = JSON.parse(text) } catch {}
+    if (res.status === 401 || res.status === 302 || body?.message === 'login_required' || body?.require_login || (!body && text.includes('not-logged-in'))) {
+      const e = new Error('login_required')
+      e.login = true
+      throw e
+    }
+    if (!res.ok || body?.status === 'fail') throw new Error(body?.message || `Instagram respondió ${res.status}`)
+    return body
   }
 
   async function poll() {
-    const threads = await ig.feed.directInbox().items()
+    const body = await api('direct_v2/inbox/?persistentBadging=true&folder=&limit=20&thread_message_limit=10')
     let changed = false
-    for (const t of threads) {
-      const users = new Map((t.users ?? []).map((u) => [String(u.pk), u.full_name || u.username]))
-      const name = t.thread_title || [...users.values()].join(', ') || 'Instagram'
-      for (const it of (t.items ?? []).slice(0, 10)) {
-        const fromMe = String(it.user_id) === String(me)
-        const text = itemText(it)
-        if (!text) continue
-        const ts = Math.floor(Number(it.timestamp) / 1e6)
-        const sender = t.is_group && !fromMe ? users.get(String(it.user_id)) ?? null : null
-        const isNew = store.upsert('instagram', { id: t.thread_id, name, isGroup: !!t.is_group }, { id: it.item_id, fromMe, sender, text, ts })
-        if (isNew) changed = true
-        if (isNew && !firstPoll && !fromMe) emit('im.message', { svc: 'instagram', chatId: t.thread_id, chatName: name, isGroup: !!t.is_group, id: it.item_id, sender, text, ts })
-      }
+    for (const { chat, msg } of parseInbox(body, cookies.ds_user_id)) {
+      const isNew = store.upsert('instagram', chat, msg)
+      if (isNew) changed = true
+      if (isNew && !firstPoll && !msg.fromMe) emit('im.message', { svc: 'instagram', chatId: chat.id, chatName: chat.name, isGroup: chat.isGroup, ...msg })
     }
     firstPoll = false
     if (changed) emit('im.changed', { svc: 'instagram' })
@@ -47,87 +74,57 @@ export function createInstagram({ authDir, store, emit }) {
   function startPolling() {
     clearInterval(timer)
     const tick = () => poll().catch((e) => {
-      if (/login_required|challenge/i.test(e?.message ?? '')) {
+      if (e.login) {
         clearInterval(timer)
-        base.set({ state: 'error', error: 'Instagram pidió iniciar sesión otra vez' })
+        base.forget()
+        base.set({ state: 'error', error: 'La sesión de Instagram se cerró: vuelve a entrar.' })
       }
     })
-    tick()
     timer = setInterval(tick, 30000 + Math.floor(Math.random() * 10000))
   }
 
-  async function opened(username) {
-    me = ig.state.cookieUserId
-    await persist(username)
-    base.set({ state: 'open', me: '@' + username })
-    startPolling()
-  }
-
-  async function login({ username, password } = {}) {
-    username = String(username ?? '').trim().replace(/^@/, '')
-    if (!username || !password) {
-      base.set({ state: 'need', need: 'credentials' })
+  async function open(c) {
+    cookies = c
+    base.set({ state: 'connecting' })
+    try {
+      await poll()
+    } catch (e) {
+      cookies = null
+      if (e.login) base.forget()
+      base.set({ state: 'error', error: e.login ? 'Instagram no aceptó la sesión: vuelve a entrar.' : e.message })
       return base.status
     }
-    ig = new IgApiClient()
-    ig.state.generateDevice(username)
-    base.set({ state: 'connecting' })
-    try {
-      await ig.account.login(username, password)
-      await opened(username)
-    } catch (e) {
-      if (e instanceof IgLoginTwoFactorRequiredError) {
-        const info = e.response.body.two_factor_info
-        const method = info.totp_two_factor_on ? '0' : '1'
-        const code = await base.ask('code', method === '0' ? 'Código de tu app de autenticación' : 'Código que te llegó por SMS')
-        await ig.account.twoFactorLogin({ username, verificationCode: String(code).trim(), twoFactorIdentifier: info.two_factor_identifier, verificationMethod: method, trustThisDevice: '1' })
-        await opened(username)
-      } else if (e instanceof IgCheckpointError) {
-        await ig.challenge.auto(true)
-        const code = await base.ask('code', 'Instagram te mandó un código de seguridad por correo o SMS')
-        await ig.challenge.sendSecurityCode(String(code).trim())
-        await opened(username)
-      } else {
-        base.set({ state: 'error', error: e?.response?.body?.message || e?.message || String(e) })
-      }
-    }
+    base.save({ cookies: c })
+    base.set({ state: 'open', me: c.username ? '@' + c.username : 'Instagram' })
+    startPolling()
     return base.status
-  }
-
-  async function restore() {
-    const saved = base.load()
-    if (!saved?.state) return
-    ig = new IgApiClient()
-    ig.state.generateDevice(saved.username)
-    await ig.state.deserialize(saved.state)
-    base.set({ state: 'connecting' })
-    try {
-      await ig.account.currentUser()
-      await opened(saved.username)
-    } catch {
-      base.set({ state: 'error', error: 'La sesión de Instagram expiró: vuelve a entrar.' })
-    }
   }
 
   return {
     svc: 'instagram',
     get status() { return base.status },
-    autostart: () => restore().catch(() => {}),
-    login: (p) => login(p).catch((e) => base.set({ state: 'error', error: e?.message ?? String(e) })).then(() => base.status),
-    submit: (v) => base.submit(v),
+    autostart: () => {
+      const saved = base.load()
+      return saved?.cookies?.sessionid ? open(saved.cookies).catch(() => {}) : null
+    },
+    async login(p = {}) {
+      if (p.cookies?.sessionid) return open(p.cookies)
+      base.set({ state: 'need', need: 'web' })
+      return base.status
+    },
+    submit: () => { throw new RpcError('bad_request', 'Nada pendiente') },
     async logout() {
       clearInterval(timer)
-      base.cancel()
-      try { await ig?.account.logout() } catch {}
-      ig = null
+      cookies = null
       base.forget()
       store.clear('instagram')
       base.set({ state: 'off' })
     },
     async send(chatId, text) {
       base.requireOpen()
-      await ig.entity.directThread(chatId).broadcastText(text)
-      store.upsert('instagram', { id: chatId }, { id: 'local-' + Date.now(), fromMe: true, text, ts: Math.floor(Date.now() / 1000) })
+      const ctx = randomUUID()
+      await api('direct_v2/threads/broadcast/text/', { action: 'send_item', thread_ids: `[${chatId}]`, text, client_context: ctx, mutation_token: ctx, offline_threading_id: ctx })
+      store.upsert('instagram', { id: chatId }, { id: 'local-' + ctx, fromMe: true, text, ts: Math.floor(Date.now() / 1000) })
       setTimeout(() => poll().catch(() => {}), 2500)
       return {}
     },

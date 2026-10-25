@@ -210,6 +210,12 @@ public partial class App : Application
             ct.Tick += (_, _) => OpenChats(chatsArg == "all" ? null : chatsArg);
             ct.Start();
         }
+        if (Environment.GetCommandLineArgs().Contains("--ig-login"))
+        {
+            var igw = new KyzWheel.App.Messages.InstagramLoginWindow();
+            igw.AppWindow.Move(new Windows.Graphics.PointInt32(700, -1000));
+            igw.AppWindow.Show(false);
+        }
         if (Environment.GetCommandLineArgs().Contains("--phone-guide")) ShowPhoneSetup(new Slot("phone", "Celular", "\uE8EA", "#60A5FA", SlotType.Phone, null, null, false));
         if (Environment.GetCommandLineArgs().Contains("--test-banner"))
         {

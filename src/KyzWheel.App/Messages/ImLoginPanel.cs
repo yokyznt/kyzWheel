@@ -78,14 +78,13 @@ public sealed class ImLoginPanel : Grid
                     _body.Children.Add(Ui.Primary("Guardar y continuar", () => _ = Do(() => _wa.ImLoginAsync(new { svc = _svc.Id, apiId = id.Text.Trim(), apiHash = hash.Password.Trim() })), "\uE73E"));
                     break;
                 }
-            case "need" when st.Need == "credentials":
+            case "need" when st.Need == "web":
+            case "off" when _svc.Id == "instagram":
+            case "error" when _svc.Id == "instagram":
                 {
-                    _body.Children.Add(P("Instagram no tiene una forma oficial de leer tus mensajes desde otra app. kyzWheel entra como si fuera tu celular: hay riesgo de que Instagram te pida verificar la cuenta o la bloquee un tiempo. Tu contraseña no se guarda; solo la sesión."));
-                    var user = new TextBox { Header = "Usuario", PlaceholderText = "tu_usuario" };
-                    var pass = new PasswordBox { Header = "Contraseña" };
-                    _body.Children.Add(user);
-                    _body.Children.Add(pass);
-                    _body.Children.Add(Ui.Primary("Entrar", () => _ = Do(() => _wa.ImLoginAsync(new { svc = _svc.Id, username = user.Text.Trim(), password = pass.Password })), "\uE73E"));
+                    if (st.State == "error") _body.Children.Add(Ui.Label(st.Error ?? "Algo falló", 12.5, Ui.Parse("#FCA5A5"), maxLines: 6));
+                    _body.Children.Add(P("Se abre la página oficial de Instagram. Entras como siempre (con tu código si tienes verificación en dos pasos) y kyzWheel solo guarda la sesión, nunca tu contraseña.\n\nInstagram no permite esto oficialmente: hay riesgo de que te pida verificar la cuenta o la bloquee un tiempo."));
+                    _body.Children.Add(Ui.Primary("Entrar con Instagram", OpenWeb, "\uE71B"));
                     break;
                 }
             case "need":
@@ -112,6 +111,14 @@ public sealed class ImLoginPanel : Grid
                 break;
         }
         _body.Children.Add(_note);
+    }
+
+    private void OpenWeb()
+    {
+        var w = new InstagramLoginWindow();
+        w.LoggedIn += cookies => _ = Do(() => _wa.ImLoginAsync(new { svc = "instagram", cookies }));
+        w.CenterOnCursorMonitor();
+        w.Activate();
     }
 
     private static BitmapImage FromDataUrl(string dataUrl)
