@@ -545,6 +545,8 @@ public sealed partial class WheelWindow : Window
             _ => "CLIC DER. CIERRA",
         };
         HubSub.Text = HubSub.Text.ToUpperInvariant();
+        if (_mode == WheelMode.Root && _stack.Count == 0 && _dragFiles.Count == 0) HubLabels.Visibility = Visibility.Collapsed;
+        else if (HubThumb.Visibility != Visibility.Visible) HubLabels.Visibility = Visibility.Visible;
         Dots.Children.Clear();
         if (_pages.Count > 1)
             for (var i = 0; i < _pages.Count; i++)
