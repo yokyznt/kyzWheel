@@ -210,6 +210,15 @@ public partial class App : Application
             ct.Tick += (_, _) => OpenChats(chatsArg == "all" ? null : chatsArg);
             ct.Start();
         }
+        if (Environment.GetCommandLineArgs().Contains("--test-copy"))
+        {
+            var tw = new Microsoft.UI.Xaml.Window { Title = "copytest" };
+            var tbx = Ui.CopyLine(new Microsoft.UI.Xaml.Controls.TextBlock { Text = "kyzWheel 0.7.0\nsegunda línea larga aquí", FontSize = 30, Margin = new Microsoft.UI.Xaml.Thickness(40) });
+            Ui.LineCopied += l => Log.Write("app.log", "copytest:" + l + "|sel:" + tbx.SelectedText);
+            tw.Content = tbx;
+            tw.AppWindow.MoveAndResize(new Windows.Graphics.RectInt32(500, -900, 700, 300));
+            tw.AppWindow.Show(false);
+        }
         if (Environment.GetCommandLineArgs().Contains("--ig-login"))
         {
             var igw = new KyzWheel.App.Messages.InstagramLoginWindow();
@@ -355,11 +364,7 @@ public partial class App : Application
         _panel ??= CreatePanel();
         if (!_wa.Running && _wa.Status.State != "missing") _wa.Start();
         var sub = _wa.Status.State == "open" ? (_wa.Status.MeName is { Length: > 0 } n ? n : "Conectado") : "Sin vincular";
-        var logout = Ui.IconButton("\uE8BD", "Desvincular WhatsApp", async () =>
-        {
-            try { await _wa.LogoutAsync(); } catch (WaException) { }
-        });
-        _panel.Show(s.Glyph, s.ColorHex, s.Name, sub, new WhatsAppPanel(_wa, _toasts, files, chat), _wa.Status.State == "open" ? [logout] : [], x, y);
+        _panel.Show(s.Glyph, s.ColorHex, s.Name, sub, new WhatsAppPanel(_wa, _toasts, files, chat), [], x, y);
     }
 
     private void UpdateBadges()

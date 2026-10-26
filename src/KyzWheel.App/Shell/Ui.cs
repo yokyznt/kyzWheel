@@ -214,31 +214,43 @@ public static class Ui
     public static Microsoft.UI.Xaml.Controls.TextBlock CopyLine(Microsoft.UI.Xaml.Controls.TextBlock tb)
     {
         tb.IsTextSelectionEnabled = true;
-        tb.DoubleTapped += (_, e) =>
+        var pending = false;
+        tb.AddHandler(Microsoft.UI.Xaml.UIElement.DoubleTappedEvent, new Microsoft.UI.Xaml.Input.DoubleTappedEventHandler((_, e) =>
         {
             e.Handled = true;
-            var at = 0;
-            try { at = Math.Max(0, tb.SelectionStart.Offset - 1); } catch (Exception) { }
-            var full = tb.Text ?? "";
-            var line = LineAt(full, Math.Min(at, Math.Max(0, full.Length - 1)));
-            if (line.Length == 0) return;
-            var dp = new Windows.ApplicationModel.DataTransfer.DataPackage();
-            dp.SetText(line);
-            Windows.ApplicationModel.DataTransfer.Clipboard.SetContent(dp);
-            Windows.ApplicationModel.DataTransfer.Clipboard.Flush();
-            try
+            if (pending) return;
+            pending = true;
+            tb.DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () =>
             {
-                var s0 = full.IndexOf(line, StringComparison.Ordinal);
-                if (s0 >= 0)
+                pending = false;
+                var full = tb.Text ?? "";
+                if (full.Length == 0) return;
+                var word = tb.SelectedText ?? "";
+                var raw = 0;
+                try { raw = tb.SelectionStart.Offset - tb.ContentStart.Offset; } catch (Exception) { }
+                var shift = 1;
+                foreach (var k in new[] { 1, 0, 2 })
+                    if (word.Length > 0 && raw - k >= 0 && raw - k + word.Length <= full.Length && string.CompareOrdinal(full, raw - k, word, 0, word.Length) == 0) { shift = k; break; }
+                var idx = Math.Clamp(raw - shift, 0, full.Length - 1);
+                var line = LineAt(full, idx);
+                if (line.Length == 0) return;
+                var dp = new Windows.ApplicationModel.DataTransfer.DataPackage();
+                dp.SetText(line);
+                Windows.ApplicationModel.DataTransfer.Clipboard.SetContent(dp);
+                Windows.ApplicationModel.DataTransfer.Clipboard.Flush();
+                try
                 {
-                    var a = tb.ContentStart.GetPositionAtOffset(s0 + 1, Microsoft.UI.Xaml.Documents.LogicalDirection.Forward);
-                    var b = tb.ContentStart.GetPositionAtOffset(s0 + 1 + line.Length, Microsoft.UI.Xaml.Documents.LogicalDirection.Forward);
-                    if (a is not null && b is not null) tb.Select(a, b);
+                    var start = full[idx] == '\n' && idx > 0 ? full.LastIndexOf('\n', idx - 1) + 1 : full.LastIndexOf('\n', idx) + 1;
+                    var s0 = full.IndexOf(line, start, StringComparison.Ordinal);
+                    if (s0 < 0) s0 = full.IndexOf(line, StringComparison.Ordinal);
+                    var p0 = tb.ContentStart.GetPositionAtOffset(s0 + shift, Microsoft.UI.Xaml.Documents.LogicalDirection.Forward);
+                    var p1 = tb.ContentStart.GetPositionAtOffset(s0 + shift + line.Length, Microsoft.UI.Xaml.Documents.LogicalDirection.Backward);
+                    if (p0 is not null && p1 is not null) tb.Select(p0, p1);
                 }
-            }
-            catch (Exception) { }
-            LineCopied?.Invoke(line);
-        };
+                catch (Exception) { }
+                LineCopied?.Invoke(line);
+            });
+        }), true);
         return tb;
     }
 }
