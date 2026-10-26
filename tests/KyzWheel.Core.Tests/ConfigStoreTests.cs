@@ -124,5 +124,7 @@ public sealed class ConfigStoreTests : IDisposable
         Assert.Empty(c.SubOrder);
         Assert.Empty(c.SubHidden);
         Assert.Equal("cursor", c.NotifyMonitor);
+        Assert.Equal(50, c.TransparencyOrDefault);
+        Assert.True(c.HideLocked);
     }
 }

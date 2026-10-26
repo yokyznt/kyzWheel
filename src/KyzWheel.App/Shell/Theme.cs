@@ -10,6 +10,18 @@ public static class Theme
 
     public static event Action? Changed;
 
+    public static double Opacity { get; private set; } = 1;
+
+    public static double FactorFor(int transparency) => Math.Clamp(1.7 - 1.55 * Math.Clamp(transparency, 0, 100) / 100.0, 0.15, 1.7);
+
+    public static void SetTransparency(int transparency)
+    {
+        var f = FactorFor(transparency);
+        if (Math.Abs(f - Opacity) < 0.001) return;
+        Opacity = f;
+        Changed?.Invoke();
+    }
+
     public static void Apply(string? id)
     {
         var t = Themes.Find(id);
@@ -24,7 +36,9 @@ public static class Theme
         var h = hex.TrimStart('#');
         if (h.Length == 6) h = "FF" + h;
         var v = System.Convert.ToUInt32(h, 16);
-        return ColorHelper.FromArgb((byte)(v >> 24), (byte)(v >> 16), (byte)(v >> 8), (byte)v);
+        var a = (byte)(v >> 24);
+        if (a < 0xFF) a = (byte)Math.Clamp(Math.Round(a * Opacity), 0, 254);
+        return ColorHelper.FromArgb(a, (byte)(v >> 16), (byte)(v >> 8), (byte)v);
     }
 
     public static LinearGradientBrush Vertical(string top, string bottom, double split = 1)

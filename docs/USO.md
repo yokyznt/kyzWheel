@@ -61,6 +61,9 @@ Selecciona un archivo en el Explorador o en el Escritorio y aprieta el atajo. La
 ## Avisos
 
 - Los avisos de WhatsApp y correo salen arriba al centro. Se cambian de lugar en Ajustes → Notificaciones.
+- En Ajustes → Transparencia mueves qué tan transparente se ve todo (rueda, paneles, avisos y ventanas).
+- Con la rueda del mouse giras la selección de una sección en una. En Ajustes → Movimiento de la rueda activas «Girar por saltitos» para que, aunque muevas rápido el mouse, avance de una en una.
+- Todo lo que cambies en Ajustes se guarda solo, no hay botón de guardar.
 - **Tocar** el aviso abre el chat o el correo.
 - El botón **↩** te deja contestar un WhatsApp sin abrir nada.
 - Si un juego está en pantalla completa exclusiva, los avisos se guardan y al salir te llega un resumen: «Mientras jugabas: 3 WhatsApp · 1 correo».

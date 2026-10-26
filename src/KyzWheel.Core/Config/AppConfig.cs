@@ -14,11 +14,19 @@ public sealed record AppConfig(int Version, string GlobalHotkey, IReadOnlyList<S
 
     public bool Welcomed { get; init; }
 
+    public int? Transparency { get; init; }
+
+    public bool WheelSteps { get; init; }
+
+    public int TransparencyOrDefault => Transparency ?? 50;
+
     public bool WaHideArchived { get; init; }
 
     public bool WaHideMuted { get; init; }
 
-    public bool WaHideLocked { get; init; } = true;
+    public bool? WaHideLocked { get; init; }
+
+    public bool HideLocked => WaHideLocked ?? true;
 
     private readonly string? _notifyMonitor;
     private readonly string? _notifyPosition;

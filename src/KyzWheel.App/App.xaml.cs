@@ -109,6 +109,7 @@ public partial class App : Application
             _config = _config with { Slots = slots, ToolsOffered = true };
             _store.Save(_config);
         }
+        Theme.SetTransparency(_config.TransparencyOrDefault);
         Theme.Apply(_config.ThemeId);
         _mail = new MailService(new CredentialManagerStore(), _ui);
         _mail.Changed += UpdateBadges;
@@ -145,7 +146,7 @@ public partial class App : Application
         KyzWheel.Convert.Documents.PdfConversions.EnsureFonts();
         KyzWheel.Convert.Media.FfmpegLocator.LocalDir = Path.Combine(Log.Dir, "ffmpeg");
 
-        _wheel = new WheelWindow { PagesForFiles = DragPages };
+        _wheel = new WheelWindow { PagesForFiles = DragPages, Steps = _config.WheelSteps };
         _wheel.ItemInvoked += OnItemInvoked;
         _wheel.Expand = ExpandItem;
         _wheel.Overflow += OnOverflow;
@@ -295,7 +296,7 @@ public partial class App : Application
     private IReadOnlyList<string> ApplyConfig(AppConfig cfg)
     {
         BannerWindow.Monitor = cfg.NotifyMonitor;
-        WhatsAppBridge.MuteFilter = (archived, muted, locked) => (archived && cfg.WaHideArchived) || (muted && cfg.WaHideMuted) || (locked && cfg.WaHideLocked);
+        WhatsAppBridge.MuteFilter = (archived, muted, locked) => (archived && cfg.WaHideArchived) || (muted && cfg.WaHideMuted) || (locked && cfg.HideLocked);
         WhatsAppBridge.TelegramApp = BundledTelegram();
         BannerWindow.Position = cfg.NotifyPosition;
         var bundled = BundledGoogleClient();
@@ -316,6 +317,8 @@ public partial class App : Application
         }
         _config = cfg;
         _store.Save(cfg);
+        Theme.SetTransparency(cfg.TransparencyOrDefault);
+        _wheel.Steps = cfg.WheelSteps;
         Theme.Apply(cfg.ThemeId);
         _mail.Sync(cfg.MailAccounts ?? []);
         if (cfg.Slots.Any(s => s.Type is SlotType.WhatsApp or SlotType.Messages)) _wa.Start();

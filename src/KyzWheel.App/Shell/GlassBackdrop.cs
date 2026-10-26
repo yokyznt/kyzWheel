@@ -44,7 +44,7 @@ public sealed class GlassBackdrop : SystemBackdrop
         var tint = Theme.Argb(t.PanelTint);
         _controller.TintColor = Microsoft.UI.ColorHelper.FromArgb(0xFF, tint.R, tint.G, tint.B);
         _controller.TintOpacity = Math.Clamp(tint.A / 255f * _strength, 0f, 1f);
-        _controller.LuminosityOpacity = 0.18f;
+        _controller.LuminosityOpacity = Math.Clamp(0.18f * (float)Theme.Opacity, 0f, 1f);
         _controller.FallbackColor = Microsoft.UI.ColorHelper.FromArgb(0xFF, tint.R, tint.G, tint.B);
     }
 }

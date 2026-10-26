@@ -32,6 +32,8 @@ public sealed class ConfigStore(string path)
         return AppConfig.Default;
     }
 
+    public static string Serialize(AppConfig config) => JsonSerializer.Serialize(config, ConfigJson.Default.AppConfig);
+
     public void Save(AppConfig config)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(FilePath))!);

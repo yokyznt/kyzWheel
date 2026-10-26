@@ -73,6 +73,10 @@ public sealed partial class WheelWindow : Window
     public nint GetWindowHandleSafe() => this.GetWindowHandle();
     public WheelMode Mode => _mode;
     public bool Docked { get; set; }
+
+    public bool Steps { get; set; }
+
+    private long _lastStep;
     public event Action? LostFocus;
     public int RadiusPx => (int)Math.Round(DiscR * (_scale <= 0 ? 1 : _scale));
     public void ReleaseCursor() => Unlock();
@@ -122,6 +126,16 @@ public sealed partial class WheelWindow : Window
         _lockTimer.Interval = TimeSpan.FromMilliseconds(200);
         _lockTimer.Tick += (_, _) => { if (_locked && _shown) ApplyLock(); };
         Root.PointerExited += (_, _) => { if (!_locked) SetHover(-1); };
+        Root.PointerWheelChanged += (_, e) =>
+        {
+            if (_editing || _slices.Count == 0) return;
+            e.Handled = true;
+            var d = e.GetCurrentPoint(Root).Properties.MouseWheelDelta;
+            if (d == 0) return;
+            var dir = d < 0 ? 1 : -1;
+            SetHover(_hover < 0 ? 0 : ((_hover + dir) % _slices.Count + _slices.Count) % _slices.Count);
+            _lastStep = Environment.TickCount64;
+        };
         Root.KeyDown += OnKeyDown;
         Root.DragEnter += OnDragEnter;
         Root.DragOver += OnDragOver;
@@ -723,7 +737,9 @@ public sealed partial class WheelWindow : Window
     {
         if (!_locked)
         {
-            SetHover(HitTest(e.GetCurrentPoint(Stage).Position));
+            var t = HitTest(e.GetCurrentPoint(Stage).Position);
+            if (t < 0 && Steps && _hover >= 0) return;
+            StepTo(t);
             return;
         }
         var (x, y) = User32.CursorPosition();
@@ -740,7 +756,22 @@ public sealed partial class WheelWindow : Window
             _sy *= StickR / m;
             m = StickR;
         }
-        if (m >= StickDead && _slices.Count > 0) SetHover(WheelGeometry.SliceAtAngle(_sx, _sy, _slices.Count, 0));
+        if (m >= StickDead && _slices.Count > 0) StepTo(WheelGeometry.SliceAtAngle(_sx, _sy, _slices.Count, 0));
+    }
+
+    private void StepTo(int target)
+    {
+        if (!Steps || target < 0 || _hover < 0 || target == _hover || _slices.Count < 3)
+        {
+            SetHover(target);
+            return;
+        }
+        var now = Environment.TickCount64;
+        if (now - _lastStep < 110) return;
+        _lastStep = now;
+        var n = _slices.Count;
+        var fwd = ((target - _hover) % n + n) % n;
+        SetHover(((_hover + (fwd <= n / 2 ? 1 : -1)) % n + n) % n);
     }
 
     private void OnPointerReleased(object sender, PointerRoutedEventArgs e)

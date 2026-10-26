@@ -26,5 +26,5 @@ await build({
 writeFileSync('dist/sea-config.json', JSON.stringify({ main: 'dist/sidecar.cjs', output: 'dist/sea-prep.blob', disableExperimentalSEAWarning: true, useCodeCache: false }))
 execFileSync(process.execPath, ['--experimental-sea-config', 'dist/sea-config.json'], { stdio: 'inherit' })
 copyFileSync(process.execPath, 'dist/wa-sidecar.exe')
-execFileSync('npx', ['--yes', 'postject', 'dist/wa-sidecar.exe', 'NODE_SEA_BLOB', 'dist/sea-prep.blob', '--sentinel-fuse', 'NODE_SEA_FUSE_fce680ab2cc467b6e072b8b5df1996b2'], { stdio: 'inherit', shell: true })
+execFileSync(process.execPath, ['--liftoff-only', '--no-wasm-tier-up', 'node_modules/postject/dist/cli.js', 'dist/wa-sidecar.exe', 'NODE_SEA_BLOB', 'dist/sea-prep.blob', '--sentinel-fuse', 'NODE_SEA_FUSE_fce680ab2cc467b6e072b8b5df1996b2'], { stdio: 'inherit' })
 console.log('dist/wa-sidecar.exe')

@@ -47,8 +47,13 @@ public sealed class SettingsWindow : GlassWindow
 
     private readonly Func<AppConfig, IReadOnlyList<string>> _apply;
     private readonly AppConfig _base;
+    private Microsoft.UI.Dispatching.DispatcherQueueTimer _auto = null!;
+    private string? _lastSeen;
+    private string? _lastSaved;
     private readonly List<MailAccount> _accounts;
     private string _themeId;
+    private readonly Slider _transparency = new() { Minimum = 0, Maximum = 100, StepFrequency = 5, TickFrequency = 25, TickPlacement = Microsoft.UI.Xaml.Controls.Primitives.TickPlacement.Outside, MaxWidth = 420, HorizontalAlignment = HorizontalAlignment.Left, Header = "Más sólido  ←  →  Más transparente" };
+    private readonly CheckBox _steps = new() { Content = "Girar por saltitos: la selección avanza de una sección en una aunque muevas rápido el mouse" };
     private readonly CheckBox _waArchived = new() { Content = "No avisar de chats archivados" };
     private readonly CheckBox _waMuted = new() { Content = "No avisar de chats silenciados" };
     private readonly CheckBox _waLocked = new() { Content = "No avisar de chats restringidos (bloqueados con huella o código)" };
@@ -194,12 +199,15 @@ public sealed class SettingsWindow : GlassWindow
         _notify.Toggled += (_, _) => Edit(d => d.Notify = _notify.IsOn);
         _browse.Click += async (_, _) => await BrowseAsync();
 
-        var save = new Button { Content = "Guardar", Style = (Style)Application.Current.Resources["AccentButtonStyle"] };
-        save.Click += (_, _) => Save();
 
         var root = new StackPanel { Spacing = 16, Padding = new Thickness(24, 44, 24, 24) };
         root.Children.Add(Heading("Ajustes"));
+        _transparency.Value = _base.TransparencyOrDefault;
+        _transparency.ValueChanged += (_, e) => KyzWheel.App.Shell.Theme.SetTransparency((int)e.NewValue);
         root.Children.Add(Card(Stack(Heading("Tema", 15), Muted("Cambia el aspecto de la rueda y las ventanas. Se ve al instante."), _themes)));
+        root.Children.Add(Card(Stack(Heading("Transparencia", 15), Muted("Para la rueda, los paneles, los avisos y las ventanas. Se ve al instante."), _transparency)));
+        _steps.IsChecked = _base.WheelSteps;
+        root.Children.Add(Card(Stack(Heading("Movimiento de la rueda", 15), Muted("También puedes girar la selección con la rueda del mouse y abrir con clic o Enter."), _steps)));
         var shots = KyzWheel.App.Shell.Screens.All();
         _notifyMonitor.Items.Add(new ComboBoxItem { Content = "Donde esté el mouse", Tag = "cursor" });
         _notifyMonitor.Items.Add(new ComboBoxItem { Content = "Pantalla principal", Tag = "primary" });
@@ -216,7 +224,7 @@ public sealed class SettingsWindow : GlassWindow
         _notifyPos.SelectionChanged += Preview;
         _waArchived.IsChecked = _base.WaHideArchived;
         _waMuted.IsChecked = _base.WaHideMuted;
-        _waLocked.IsChecked = _base.WaHideLocked;
+        _waLocked.IsChecked = _base.HideLocked;
         root.Children.Add(Card(Stack(Heading("Notificaciones", 15), Muted("Dónde aparecen los avisos de WhatsApp y correo."), notifyRow, Muted("WhatsApp"), _waArchived, _waMuted, _waLocked)));
         root.Children.Add(Card(Stack(Heading("Atajo global", 15), Muted("Abre la rueda donde esté el cursor."), _global)));
         var listButtons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
@@ -243,16 +251,22 @@ public sealed class SettingsWindow : GlassWindow
         {
             _accounts.Add(a);
             RenderAccounts();
-            Save();
+            AutoSave(true);
         });
         root.Children.Add(Card(Stack(Heading("Cuentas de correo", 15), Muted("Los correos recientes de todas aparecen juntos en la sección Correo."), _accountList, addAccount)));
         root.Children.Add(Card(Stack(Heading("Opciones de cada sección", 15), Muted("Activa, quita o cambia el orden de lo que sale dentro de cada sección. También puedes ordenar con clic de la rueda del mouse sobre la rueda."), _subs)));
         root.Children.Add(Card(Stack(Heading("General", 15), _autostart)));
         var footer = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 12 };
-        footer.Children.Add(save);
         footer.Children.Add(_status);
         root.Children.Add(footer);
         Surface.Children.Add(new ScrollViewer { Content = root });
+        _status.Text = "Los cambios se guardan solos";
+        _auto = DispatcherQueue.CreateTimer();
+        _auto.Interval = TimeSpan.FromMilliseconds(700);
+        _lastSaved = _lastSeen = KyzWheel.Core.Config.ConfigStore.Serialize(Build());
+        _auto.Tick += (_, _) => AutoSave();
+        _auto.Start();
+        Closed += (_, _) => { _auto.Stop(); AutoSave(true); };
         RefreshList(0);
         RenderAccounts();
         AppWindow.Closing += (_, e) =>
@@ -311,7 +325,7 @@ public sealed class SettingsWindow : GlassWindow
                 _accounts.Remove(account);
                 AccountRemoved?.Invoke(account);
                 RenderAccounts();
-                Save();
+                AutoSave(true);
             });
             Grid.SetColumn(remove, 2);
             g.Children.Add(remove);
@@ -475,21 +489,38 @@ public sealed class SettingsWindow : GlassWindow
         }
     }
 
-    private void Save()
+    private void AutoSave(bool now = false)
+    {
+        var cfg = Build();
+        var key = KyzWheel.Core.Config.ConfigStore.Serialize(cfg);
+        if (key == _lastSaved) { _lastSeen = key; return; }
+        if (!now && key != _lastSeen) { _lastSeen = key; return; }
+        _lastSeen = key;
+        if (Save()) _lastSaved = key;
+    }
+
+    private bool Save()
     {
         var empty = _slots.FirstOrDefault(s => string.IsNullOrWhiteSpace(s.Name));
         if (empty is not null)
         {
             _status.Text = "Ponle nombre a todas las secciones";
-            return;
+            return false;
         }
         var missing = _slots.FirstOrDefault(s => s.Type is SlotType.LaunchApp or SlotType.OpenUrl or SlotType.SendToFolder && string.IsNullOrWhiteSpace(s.Target));
         if (missing is not null)
         {
             _status.Text = $"Falta el destino de {missing.Name}";
-            return;
+            return false;
         }
-        var cfg = _base with
+        var cfg = Build();
+        var errors = ConfigStore.Validate(cfg);
+        if (errors.Count == 0) errors = _apply(cfg);
+        _status.Text = errors.Count == 0 ? "Guardado ✓" : string.Join(" · ", errors);
+        return errors.Count == 0;
+    }
+
+    private AppConfig Build() => _base with
         {
             GlobalHotkey = _global.Value ?? "Ctrl+Alt+Shift",
             Slots = _slots.Select(s => s.ToSlot()).ToList(),
@@ -499,14 +530,12 @@ public sealed class SettingsWindow : GlassWindow
             ThemeId = _themeId,
             NotifyMonitor = (_notifyMonitor.SelectedItem as ComboBoxItem)?.Tag as string ?? "cursor",
             NotifyPosition = (_notifyPos.SelectedItem as ComboBoxItem)?.Tag as string ?? "top-center",
+            Transparency = (int)_transparency.Value,
+            WheelSteps = _steps.IsChecked == true,
             WaHideArchived = _waArchived.IsChecked == true,
             WaHideMuted = _waMuted.IsChecked == true,
             WaHideLocked = _waLocked.IsChecked == true,
             SubOrder = _catalog is null ? _base.SubOrder : new Dictionary<string, IReadOnlyList<string>>(_subOrder),
             SubHidden = _catalog is null ? _base.SubHidden : new Dictionary<string, IReadOnlyList<string>>(_subHidden),
         };
-        var errors = ConfigStore.Validate(cfg);
-        if (errors.Count == 0) errors = _apply(cfg);
-        _status.Text = errors.Count == 0 ? "Guardado" : string.Join(" · ", errors);
-    }
 }
