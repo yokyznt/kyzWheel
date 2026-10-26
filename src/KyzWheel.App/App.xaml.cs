@@ -147,6 +147,7 @@ public partial class App : Application
         KyzWheel.Convert.Media.FfmpegLocator.LocalDir = Path.Combine(Log.Dir, "ffmpeg");
 
         _wheel = new WheelWindow { PagesForFiles = DragPages, Steps = _config.WheelSteps };
+        _wheel.DockedClick += () => _panel?.HidePanel();
         _wheel.ItemInvoked += OnItemInvoked;
         _wheel.Expand = ExpandItem;
         _wheel.Overflow += OnOverflow;
@@ -295,6 +296,7 @@ public partial class App : Application
 
     private IReadOnlyList<string> ApplyConfig(AppConfig cfg)
     {
+        cfg = cfg with { PanelSizes = _config.PanelSizes, PanelPositions = _config.PanelPositions };
         BannerWindow.Monitor = cfg.NotifyMonitor;
         WhatsAppBridge.MuteFilter = (archived, muted, locked) => (archived && cfg.WaHideArchived) || (muted && cfg.WaHideMuted) || (locked && cfg.HideLocked);
         WhatsAppBridge.TelegramApp = BundledTelegram();
@@ -1133,6 +1135,20 @@ public partial class App : Application
     private SidePanelWindow CreatePanel()
     {
         var p = new SidePanelWindow();
+        p.SavedSize = k => _config.PanelSizes?.GetValueOrDefault(k) is [var w, var h] ? (w, h) : null;
+        p.SavedPosition = k => _config.PanelPositions?.GetValueOrDefault(k) is [var px, var py] ? (px, py) : null;
+        p.SizeSaved += (k, w, h) =>
+        {
+            var d = new Dictionary<string, int[]>(_config.PanelSizes ?? []) { [k] = [w, h] };
+            _config = _config with { PanelSizes = d };
+            _store.Save(_config);
+        };
+        p.PositionSaved += (k, px, py) =>
+        {
+            var d = new Dictionary<string, int[]>(_config.PanelPositions ?? []) { [k] = [px, py] };
+            _config = _config with { PanelPositions = d };
+            _store.Save(_config);
+        };
         p.PanelHidden += () =>
         {
             if (!_dockedPanel) return;

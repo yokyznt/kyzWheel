@@ -63,6 +63,7 @@ Selecciona un archivo en el Explorador o en el Escritorio y aprieta el atajo. La
 - Los avisos de WhatsApp y correo salen arriba al centro. Se cambian de lugar en Ajustes → Notificaciones.
 - En Ajustes → Transparencia mueves qué tan transparente se ve todo (rueda, paneles, avisos y ventanas).
 - Con la rueda del mouse giras la selección de una sección en una. En Ajustes → Movimiento de la rueda activas «Girar por saltitos» para que, aunque muevas rápido el mouse, avance de una en una.
+- Las ventanitas (Gmail, WhatsApp, chats…) se arrastran desde su título y se agrandan desde las orillas. Cada una recuerda su tamaño y lugar. Mientras una está abierta, la rueda se oscurece y no responde; un clic en ella o Esc la cierra.
 - Todo lo que cambies en Ajustes se guarda solo, no hay botón de guardar.
 - **Tocar** el aviso abre el chat o el correo.
 - El botón **↩** te deja contestar un WhatsApp sin abrir nada.

@@ -18,6 +18,10 @@ public sealed record AppConfig(int Version, string GlobalHotkey, IReadOnlyList<S
 
     public bool WheelSteps { get; init; }
 
+    public Dictionary<string, int[]>? PanelSizes { get; init; }
+
+    public Dictionary<string, int[]>? PanelPositions { get; init; }
+
     public int TransparencyOrDefault => Transparency ?? 50;
 
     public bool WaHideArchived { get; init; }

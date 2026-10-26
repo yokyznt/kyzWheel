@@ -1,6 +1,7 @@
 using KyzWheel.App.Shell;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using System.Runtime.InteropServices;
 
 namespace KyzWheel.App.Wheel;
 
@@ -14,6 +15,26 @@ public sealed class SidePanelWindow : GlassWindow
     private long _shownAt;
 
     public event Action? PanelHidden;
+
+    public event Action<string, int, int>? SizeSaved;
+
+    public event Action<string, int, int>? PositionSaved;
+
+    public Func<string, (int W, int H)?>? SavedSize { get; set; }
+
+    public Func<string, (int X, int Y)?>? SavedPosition { get; set; }
+
+    private string _key = "";
+    private bool _moving;
+    private readonly Microsoft.UI.Dispatching.DispatcherQueueTimer _persist;
+    private bool _sizeDirty;
+    private bool _posDirty;
+
+    [DllImport("user32.dll")]
+    private static extern bool ReleaseCapture();
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr SendMessage(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);
 
     public bool IsOpen => _shown;
 
@@ -37,6 +58,29 @@ public sealed class SidePanelWindow : GlassWindow
         {
             if (e.WindowActivationState == WindowActivationState.Deactivated && _shown && Environment.TickCount64 - _shownAt > 400 && !Pinned) HidePanel();
             if (e.WindowActivationState == WindowActivationState.Deactivated && _shown) LostFocus?.Invoke();
+        };
+        ((Microsoft.UI.Windowing.OverlappedPresenter)AppWindow.Presenter).IsResizable = true;
+        _header.Background = Ui.Brush(Microsoft.UI.ColorHelper.FromArgb(1, 0, 0, 0));
+        _header.PointerPressed += (_, e) =>
+        {
+            if (!e.GetCurrentPoint(_header).Properties.IsLeftButtonPressed) return;
+            ReleaseCapture();
+            SendMessage(WinRT.Interop.WindowNative.GetWindowHandle(this), 0xA1, 2, IntPtr.Zero);
+        };
+        _persist = DispatcherQueue.CreateTimer();
+        _persist.Interval = TimeSpan.FromMilliseconds(500);
+        _persist.IsRepeating = false;
+        _persist.Tick += (_, _) => Persist();
+        AppWindow.Changed += (_, e) =>
+        {
+            if (_moving || !_shown) return;
+            if (e.DidSizeChange) _sizeDirty = true;
+            if (e.DidPositionChange) _posDirty = true;
+            if (_sizeDirty || _posDirty)
+            {
+                _persist.Stop();
+                _persist.Start();
+            }
         };
         AppWindow.Closing += (_, e) =>
         {
@@ -67,7 +111,13 @@ public sealed class SidePanelWindow : GlassWindow
         foreach (var a in actions) _actions.Children.Add(a);
         _header.Children.Add(_actions);
         _body.Content = content;
+        Persist();
+        _key = title;
+        _moving = true;
         var wa = KyzWheel.Platform.Native.User32.WorkAreaAt(anchorX, anchorY);
+        var scale = KyzWheel.Platform.Native.Shcore.ScaleAt(anchorX, anchorY);
+        var want = SavedSize?.Invoke(_key) ?? (380, 540);
+        AppWindow.Resize(new Windows.Graphics.SizeInt32(Math.Min((int)(want.W * scale), wa.W - 16), Math.Min((int)(want.H * scale), wa.H - 16)));
         var size = AppWindow.Size;
         var x = Math.Clamp(anchorX - size.Width / 2, wa.X + 8, wa.X + wa.W - size.Width - 8);
         if (dock > 0)
@@ -77,7 +127,18 @@ public sealed class SidePanelWindow : GlassWindow
             x = right + size.Width <= wa.X + wa.W - 8 ? right : Math.Max(wa.X + 8, left);
         }
         var y = Math.Clamp(anchorY - size.Height / 2, wa.Y + 8, wa.Y + wa.H - size.Height - 8);
+        if (SavedPosition?.Invoke(_key) is { } pos)
+        {
+            var pa = KyzWheel.Platform.Native.User32.WorkAreaAt(pos.X + size.Width / 2, pos.Y + 20);
+            if (pa.X == wa.X && pa.Y == wa.Y)
+            {
+                x = Math.Clamp(pos.X, wa.X, wa.X + wa.W - size.Width);
+                y = Math.Clamp(pos.Y, wa.Y, wa.Y + wa.H - size.Height);
+            }
+        }
         AppWindow.Move(new Windows.Graphics.PointInt32(x, y));
+        _moving = false;
+        _sizeDirty = _posDirty = false;
         _shown = true;
         _shownAt = Environment.TickCount64;
         BringToFront();
@@ -86,9 +147,24 @@ public sealed class SidePanelWindow : GlassWindow
 
     public void Replace(UIElement content) => _body.Content = content;
 
+    private void Persist()
+    {
+        _persist.Stop();
+        if (_key.Length == 0) return;
+        if (_sizeDirty)
+        {
+            var c = AppWindow.Position;
+            var sc = KyzWheel.Platform.Native.Shcore.ScaleAt(c.X + AppWindow.Size.Width / 2, c.Y + 20);
+            SizeSaved?.Invoke(_key, (int)Math.Round(AppWindow.Size.Width / sc), (int)Math.Round(AppWindow.Size.Height / sc));
+        }
+        if (_posDirty) PositionSaved?.Invoke(_key, AppWindow.Position.X, AppWindow.Position.Y);
+        _sizeDirty = _posDirty = false;
+    }
+
     public void HidePanel()
     {
         if (!_shown) return;
+        Persist();
         _shown = false;
         AppWindow.Hide();
         PanelHidden?.Invoke();

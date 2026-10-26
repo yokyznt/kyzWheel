@@ -72,7 +72,21 @@ public sealed partial class WheelWindow : Window
 
     public nint GetWindowHandleSafe() => this.GetWindowHandle();
     public WheelMode Mode => _mode;
-    public bool Docked { get; set; }
+    private bool _docked;
+
+    public bool Docked
+    {
+        get => _docked;
+        set
+        {
+            if (_docked == value) return;
+            _docked = value;
+            if (value) SetHover(-1);
+            Stage.Opacity = value ? 0.4 : 1;
+        }
+    }
+
+    public event Action? DockedClick;
 
     public bool Steps { get; set; }
 
@@ -105,6 +119,12 @@ public sealed partial class WheelWindow : Window
         Root.PointerPressed += (_, e) =>
         {
             var props = e.GetCurrentPoint(Root).Properties;
+            if (Docked)
+            {
+                e.Handled = true;
+                DockedClick?.Invoke();
+                return;
+            }
             if (props.IsMiddleButtonPressed)
             {
                 e.Handled = true;
@@ -128,7 +148,7 @@ public sealed partial class WheelWindow : Window
         Root.PointerExited += (_, _) => { if (!_locked) SetHover(-1); };
         Root.PointerWheelChanged += (_, e) =>
         {
-            if (_editing || _slices.Count == 0) return;
+            if (_editing || Docked || _slices.Count == 0) return;
             e.Handled = true;
             var d = e.GetCurrentPoint(Root).Properties.MouseWheelDelta;
             if (d == 0) return;
@@ -735,6 +755,7 @@ public sealed partial class WheelWindow : Window
 
     private void OnPointerMoved(object sender, PointerRoutedEventArgs e)
     {
+        if (Docked) return;
         if (!_locked)
         {
             var t = HitTest(e.GetCurrentPoint(Stage).Position);
@@ -776,6 +797,7 @@ public sealed partial class WheelWindow : Window
 
     private void OnPointerReleased(object sender, PointerRoutedEventArgs e)
     {
+        if (Docked) return;
         var kind = e.GetCurrentPoint(Stage).Properties.PointerUpdateKind;
         if (kind is Microsoft.UI.Input.PointerUpdateKind.RightButtonReleased or Microsoft.UI.Input.PointerUpdateKind.MiddleButtonReleased) return;
         var idx = _locked ? _hover : HitTest(e.GetCurrentPoint(Stage).Position);
@@ -826,6 +848,12 @@ public sealed partial class WheelWindow : Window
 
     private void OnKeyDown(object sender, KeyRoutedEventArgs e)
     {
+        if (Docked)
+        {
+            if (e.Key == Windows.System.VirtualKey.Escape) DockedClick?.Invoke();
+            e.Handled = true;
+            return;
+        }
         switch (e.Key)
         {
             case Windows.System.VirtualKey.Escape when _editing:
