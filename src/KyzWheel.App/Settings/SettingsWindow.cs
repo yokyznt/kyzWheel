@@ -49,6 +49,9 @@ public sealed class SettingsWindow : GlassWindow
     private readonly AppConfig _base;
     private readonly List<MailAccount> _accounts;
     private string _themeId;
+    private readonly CheckBox _waArchived = new() { Content = "No avisar de chats archivados" };
+    private readonly CheckBox _waMuted = new() { Content = "No avisar de chats silenciados" };
+    private readonly CheckBox _waLocked = new() { Content = "No avisar de chats restringidos (bloqueados con huella o código)" };
     private readonly ComboBox _notifyMonitor = new() { Header = "Pantalla", MinWidth = 260 };
     private readonly ComboBox _notifyPos = new() { Header = "Lugar", MinWidth = 200 };
     public event Action<string, string>? TestNotification;
@@ -57,9 +60,12 @@ public sealed class SettingsWindow : GlassWindow
     private readonly Dictionary<string, IReadOnlyList<string>> _subHidden = new();
     private Func<Slot, IReadOnlyList<(string Id, string Label, string Glyph)>>? _catalog;
 
-    public void SetSubCatalog(Func<Slot, IReadOnlyList<(string Id, string Label, string Glyph)>> catalog)
+    private IReadOnlyList<Slot> _extraSlots = [];
+
+    public void SetSubCatalog(Func<Slot, IReadOnlyList<(string Id, string Label, string Glyph)>> catalog, IReadOnlyList<Slot>? extra = null)
     {
         _catalog = catalog;
+        _extraSlots = extra ?? [];
         foreach (var (k, v) in _base.SubOrder) _subOrder[k] = v;
         foreach (var (k, v) in _base.SubHidden) _subHidden[k] = v;
         RenderSubs();
@@ -69,7 +75,7 @@ public sealed class SettingsWindow : GlassWindow
     {
         _subs.Children.Clear();
         if (_catalog is null) return;
-        foreach (var slot in _base.Slots)
+        foreach (var slot in _base.Slots.Concat(_extraSlots))
         {
             var items = _catalog(slot);
             if (items.Count == 0) continue;
@@ -208,7 +214,10 @@ public sealed class SettingsWindow : GlassWindow
         void Preview(object? _, SelectionChangedEventArgs __) => TestNotification?.Invoke((_notifyMonitor.SelectedItem as ComboBoxItem)?.Tag as string ?? "cursor", (_notifyPos.SelectedItem as ComboBoxItem)?.Tag as string ?? "top-center");
         _notifyMonitor.SelectionChanged += Preview;
         _notifyPos.SelectionChanged += Preview;
-        root.Children.Add(Card(Stack(Heading("Notificaciones", 15), Muted("Dónde aparecen los avisos de WhatsApp y correo."), notifyRow)));
+        _waArchived.IsChecked = _base.WaHideArchived;
+        _waMuted.IsChecked = _base.WaHideMuted;
+        _waLocked.IsChecked = _base.WaHideLocked;
+        root.Children.Add(Card(Stack(Heading("Notificaciones", 15), Muted("Dónde aparecen los avisos de WhatsApp y correo."), notifyRow, Muted("WhatsApp"), _waArchived, _waMuted, _waLocked)));
         root.Children.Add(Card(Stack(Heading("Atajo global", 15), Muted("Abre la rueda donde esté el cursor."), _global)));
         var listButtons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
         listButtons.Children.Add(_add);
@@ -490,6 +499,9 @@ public sealed class SettingsWindow : GlassWindow
             ThemeId = _themeId,
             NotifyMonitor = (_notifyMonitor.SelectedItem as ComboBoxItem)?.Tag as string ?? "cursor",
             NotifyPosition = (_notifyPos.SelectedItem as ComboBoxItem)?.Tag as string ?? "top-center",
+            WaHideArchived = _waArchived.IsChecked == true,
+            WaHideMuted = _waMuted.IsChecked == true,
+            WaHideLocked = _waLocked.IsChecked == true,
             SubOrder = _catalog is null ? _base.SubOrder : new Dictionary<string, IReadOnlyList<string>>(_subOrder),
             SubHidden = _catalog is null ? _base.SubHidden : new Dictionary<string, IReadOnlyList<string>>(_subHidden),
         };

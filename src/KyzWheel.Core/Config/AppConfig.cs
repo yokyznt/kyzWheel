@@ -14,6 +14,12 @@ public sealed record AppConfig(int Version, string GlobalHotkey, IReadOnlyList<S
 
     public bool Welcomed { get; init; }
 
+    public bool WaHideArchived { get; init; }
+
+    public bool WaHideMuted { get; init; }
+
+    public bool WaHideLocked { get; init; } = true;
+
     private readonly string? _notifyMonitor;
     private readonly string? _notifyPosition;
 

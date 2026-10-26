@@ -164,6 +164,9 @@ export function createStore(file, { maxChats = 80, maxMessagesPerChat = 60, debo
         name: c.subject ?? c.name ?? prev.name,
         unread: c.unreadCount ?? prev.unread,
         lastTs: Math.max(prev.lastTs, tsOf(c.conversationTimestamp)),
+        archived: c.archived ?? c.archive ?? prev.archived ?? false,
+        muteEnd: c.muteEndTime !== undefined ? tsOf(c.muteEndTime) : c.mute !== undefined ? tsOf(c.mute) : prev.muteEnd ?? 0,
+        locked: c.locked ?? c.chatLockSettings?.isLocked ?? prev.locked ?? false,
       }
     }
     prune()
@@ -278,6 +281,18 @@ export function createStore(file, { maxChats = 80, maxMessagesPerChat = 60, debo
         if (!seen.has(key)) seen.set(key, c.name)
       }
       return [...seen].filter(([jid, name]) => fold(name).includes(f) || jid.includes(f)).sort((a, b) => fold(a[1]).localeCompare(fold(b[1]))).slice(0, n).map(([jid, name]) => ({ jid, name }))
+    },
+    recentStickers(n = 24) {
+      const all = []
+      for (const [jid, list] of Object.entries(state.messages))
+        for (const m of list) if (m.file?.kind === 'sticker' && m.file.media) all.push({ jid, messageId: m.id, ts: m.ts, key: m.file.media.mediaKey?.slice(0, 16) ?? m.id })
+      const seen = new Set()
+      return all.sort((a, b) => b.ts - a.ts).filter((x) => !seen.has(x.key) && seen.add(x.key)).slice(0, n)
+    },
+    flags(jid) {
+      const c = state.chats[jid] ?? state.chats[state.alias[jid]] ?? {}
+      const now = Date.now() / 1000
+      return { archived: !!c.archived, muted: c.muteEnd === -1 || c.muteEnd > now, locked: !!c.locked }
     },
     unreadTotal: () => Object.values(state.chats).reduce((a, c) => a + (c.unread ?? 0), 0),
     flush,

@@ -117,7 +117,18 @@ public partial class App : Application
         _clips.Start();
         _wa = new WhatsAppBridge(_ui);
         _wa.ChatsChanged += () => _ = RefreshWaCacheAsync();
-        _wa.ChatsChanged += () => QueueFeedRefresh("wa");
+        _wa.ChatsChanged += () => QueueFeedRefresh("chats");
+        _wa.ImChanged += () => QueueFeedRefresh("chats");
+        _wa.ImStatusChanged += _ => QueueFeedRefresh("chats");
+        _wa.ImMessageArrived += item =>
+        {
+            if (!_config.Slots.Any(s => s.Type is SlotType.Messages && s.Notify)) return;
+            var (svc, chatId) = KyzWheel.Core.Messaging.Im.Split(item.Jid);
+            var sv = KyzWheel.Core.Messaging.Im.Find(svc);
+            var title = item.IsGroup && !string.IsNullOrEmpty(item.Message.Sender) ? $"{item.Message.Sender} · {item.ChatName}" : item.ChatName;
+            Notify("im", item.Jid, title, item.Message.Text, sv.ColorHex, sv.Glyph, null, reply: text => _wa.ImSendAsync(svc, chatId, text));
+        };
+        Ui.LineCopied += line => Notify("copy", "", "Línea copiada", line, "#7DD3FC", "\uE8C8", null, true);
         _wa.StatusChanged += () => { if (_wa.Status.State == "open") _ = RefreshWaCacheAsync(); };
         _wa.StatusChanged += UpdateBadges;
         _wa.ChatsChanged += () => _ = RefreshWaUnreadAsync();
@@ -191,6 +202,20 @@ public partial class App : Application
             var p = at.Split(',');
             _wheel.ShowRoot(int.Parse(p[0]), int.Parse(p[1]), RootPage(), Stopwatch.StartNew());
         }
+        if (Environment.GetCommandLineArgs().SkipWhile(a => a != "--chats").Skip(1).FirstOrDefault() is { } chatsArg)
+        {
+            var ct = _ui.CreateTimer();
+            ct.Interval = TimeSpan.FromSeconds(9);
+            ct.IsRepeating = false;
+            ct.Tick += (_, _) => OpenChats(chatsArg == "all" ? null : chatsArg);
+            ct.Start();
+        }
+        if (Environment.GetCommandLineArgs().Contains("--ig-login"))
+        {
+            var igw = new KyzWheel.App.Messages.InstagramLoginWindow();
+            igw.AppWindow.Move(new Windows.Graphics.PointInt32(700, -1000));
+            igw.AppWindow.Show(false);
+        }
         if (Environment.GetCommandLineArgs().Contains("--phone-guide")) ShowPhoneSetup(new Slot("phone", "Celular", "\uE8EA", "#60A5FA", SlotType.Phone, null, null, false));
         if (Environment.GetCommandLineArgs().Contains("--test-banner"))
         {
@@ -208,7 +233,7 @@ public partial class App : Application
             ft.IsRepeating = false;
             ft.Tick += (_, _) =>
             {
-                if (feed == "wa") _ = ShowWaFeedAsync();
+                if (feed == "wa") OpenChats(null);
                 else ShowMailFeed();
             };
             ft.Start();
@@ -261,6 +286,8 @@ public partial class App : Application
     private IReadOnlyList<string> ApplyConfig(AppConfig cfg)
     {
         BannerWindow.Monitor = cfg.NotifyMonitor;
+        WhatsAppBridge.MuteFilter = (archived, muted, locked) => (archived && cfg.WaHideArchived) || (muted && cfg.WaHideMuted) || (locked && cfg.WaHideLocked);
+        WhatsAppBridge.TelegramApp = BundledTelegram();
         BannerWindow.Position = cfg.NotifyPosition;
         var bundled = BundledGoogleClient();
         var stored = _mail.Secrets;
@@ -386,7 +413,7 @@ public partial class App : Application
 
     private void ShowMailOrWaFeed()
     {
-        if (_wa.Status.State == "open") _ = ShowWaFeedAsync();
+        if (_wa.Status.State == "open") OpenChats(null);
         else ShowMailFeed();
     }
 
@@ -512,6 +539,11 @@ public partial class App : Application
     {
         try
         {
+            if (kind == "im")
+            {
+                OpenChats(KyzWheel.Core.Messaging.Im.Split(id).Svc);
+                return;
+            }
             if (kind == "wa")
             {
                 var chat = _waChats.FirstOrDefault(c => c.Jid == id) ?? new KyzWheel.Core.WhatsApp.WaChat(id, id.Split('@')[0], "", DateTimeOffset.Now, 0, id.EndsWith("@g.us"));
@@ -921,6 +953,8 @@ public partial class App : Application
 
     public IReadOnlyList<(string Id, string Label, string Glyph)> SubCatalog(Slot s)
     {
+        if (s.Id == ChatsPseudoSlot.Id)
+            return [("chats:all", "Todos", "\uE8F2"), .. KyzWheel.Core.Messaging.Im.All.Select(sv => ("chats:" + sv.Id, sv.Name, sv.Glyph))];
         if (!CustomizableSubs.Contains(s.Type)) return [];
         var raw = s.Type == SlotType.Phone ? PhoneItems(s) : SubPageRaw(new WheelItem("slot:" + s.Id, s.Name, s.Glyph, s.ColorHex, 0, s), WheelMode.Root)?.Items ?? [];
         return raw.Select(i => (i.Id, i.Label, i.Glyph)).ToList();
@@ -983,8 +1017,8 @@ public partial class App : Application
             case SlotType.Messages when mode == WheelMode.Root:
                 return new WheelPage(s.Name,
                 [
-                    new("msg:wa", "WhatsApp", "\uE8BD", "#25D366", _wa.Status.Unread, "msg:wa"),
                     new("msg:mail", _mail.Accounts.Count == 0 ? "Conectar Gmail" : "Gmail", "\uE715", "#EA4335", _mail.Inbox.UnreadCount, "msg:mail"),
+                    new("msg:chats", "Mensajes", "\uE8F2", "#34D399", _wa.Status.Unread, "msg:chats", ChatItems()),
                 ], s);
             case SlotType.Messages:
                 return new WheelPage(s.Name, [SlotItem(WaSlot), SlotItem(MailSlot)], s);
@@ -1134,9 +1168,125 @@ public partial class App : Application
         {
             _feedRefreshQueued = false;
             if (!_dockedPanel || _feed is null || _feedKind != kind) return;
-            _feed.Update(kind == "wa" ? await WaEntriesAsync() : MailEntries());
+            _feed.Update(kind == "chats" ? await ChatEntriesAsync() : MailEntries());
         };
         t.Start();
+    }
+
+    public static readonly Slot ChatsPseudoSlot = new("messages-chats", "Mensajes › chats", "\uE8F2", "#34D399", SlotType.Messages, null, null, false);
+
+    private IReadOnlyList<WheelItem> ChatItems()
+    {
+        var items = new List<WheelItem> { new("chats:all", "Todos", "\uE8F2", "#34D399", _wa.Status.Unread, "chats:all") };
+        items.AddRange(KyzWheel.Core.Messaging.Im.All.Select(sv => new WheelItem("chats:" + sv.Id, sv.Name, sv.Glyph, sv.ColorHex, sv.Id == "whatsapp" ? _wa.Status.Unread : 0, "chats:" + sv.Id)));
+        return Customize(new WheelPage("Mensajes", items), ChatsPseudoSlot)!.Items;
+    }
+
+    private bool ServiceOpen(string svc) => svc == "whatsapp" ? _wa.Status.State == "open" : _wa.Im.TryGetValue(svc, out var st) && st.Open;
+
+    private void OpenChats(string? svc)
+    {
+        if (svc is not null && !ServiceOpen(svc))
+        {
+            if (svc == "whatsapp") ShowWhatsAppPanel(WaSlot, []);
+            else ShowImLogin(svc);
+            return;
+        }
+        _ = ShowChatsFeedAsync(svc);
+    }
+
+    private void ShowImLogin(string svc)
+    {
+        var sv = KyzWheel.Core.Messaging.Im.Find(svc);
+        DockPanel(sv.Glyph, sv.ColorHex, sv.Name, "Sin conectar", new KyzWheel.App.Messages.ImLoginPanel(_wa, sv, () => _ = ShowChatsFeedAsync(svc)), []);
+    }
+
+    private async Task ShowChatsFeedAsync(string? filter)
+    {
+        try { await _wa.RefreshImAsync(); } catch (Exception) { }
+        var entries = await ChatEntriesAsync();
+        var waNote = Ui.Label("", 11, Ui.Tertiary);
+        _feed = new KyzWheel.App.Messages.MessageFeedPanel(entries, _toasts, "Cuando lleguen mensajes aparecen aquí.", e => e.AvatarKey is { } jid ? _wa.AvatarAsync(jid) : Task.FromResult<string?>(null), f => KyzWheel.App.WhatsApp.WhatsAppPanel.MediaView(_wa, waNote, f));
+        var services = KyzWheel.Core.Messaging.Im.All.Where(sv => ServiceOpen(sv.Id)).ToList();
+        _feed.SetFilters(services, filter);
+        _feedKind = "chats";
+        var sv0 = filter is null ? null : KyzWheel.Core.Messaging.Im.Find(filter);
+        var connect = new List<Microsoft.UI.Xaml.Controls.Button>();
+        foreach (var off in KyzWheel.Core.Messaging.Im.All.Where(x => !ServiceOpen(x.Id)))
+        {
+            var id = off.Id;
+            connect.Add(Ui.IconButton(off.Glyph, "Conectar " + off.Name, () => OpenChats(id)));
+        }
+        DockPanel(sv0?.Glyph ?? "\uE8F2", sv0?.ColorHex ?? "#34D399", sv0?.Name ?? "Mensajes", "En vivo · responde, manda stickers o llama", _feed, connect);
+    }
+
+    private async Task<IReadOnlyList<KyzWheel.App.Messages.FeedEntry>> ChatEntriesAsync()
+    {
+        var all = new List<KyzWheel.App.Messages.FeedEntry>();
+        if (_wa.Status.State == "open") all.AddRange(await WaEntriesAsync());
+        IReadOnlyList<KyzWheel.Core.WhatsApp.WaFeedItem> im = [];
+        try
+        {
+            if (_wa.Running) im = await _wa.ImRecentAsync(200);
+        }
+        catch (Exception e)
+        {
+            Log.Error(e);
+        }
+        foreach (var g in KyzWheel.Core.WhatsApp.WaFeedGrouper.Group(im, 25))
+        {
+            var (svc, chatId) = KyzWheel.Core.Messaging.Im.Split(g.Jid);
+            var sv = KyzWheel.Core.Messaging.Im.Find(svc);
+            var lines = g.Lines.Select(l =>
+            {
+                var m = l.Item.Message;
+                var who = m.FromMe ? "Tú" : g.IsGroup ? m.Sender : g.ChatName;
+                return new KyzWheel.App.Messages.FeedLine(who, m.Text, m.Ts, l.Depth, l.ParentInGroup, null, null, null);
+            }).ToList();
+            var last = g.Lines.MaxBy(l => l.Item.Message.Ts)!.Item.Message;
+            all.Add(new KyzWheel.App.Messages.FeedEntry(g.Jid, g.ChatName, sv.Name + (g.Lines.Count > 1 ? $" · {g.Lines.Count} mensajes" : ""), string.Join("\n", g.Lines.Select(l => l.Item.Message.Text)), g.Last, sv.ColorHex, false, null, null, null, null, lines, last.Id + g.Lines.Count)
+            {
+                Service = svc,
+                Reply = text => _wa.ImSendAsync(svc, chatId, text),
+                Stickers = svc == "instagram" ? null : () => _wa.StickersAsync(svc),
+                SendSticker = svc == "instagram" ? null : st => _wa.SendStickerAsync(svc, chatId, st),
+                Call = async () => OpenUrl(await _wa.CallUrlAsync(svc, chatId)),
+            });
+        }
+        return all.OrderByDescending(e => e.When).ToList();
+    }
+
+    private static void OpenUrl(string url)
+    {
+        try
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true });
+        }
+        catch (Exception e)
+        {
+            throw new InvalidOperationException("No encontré la app para abrir " + url.Split(':')[0] + ": " + e.Message);
+        }
+    }
+
+    private static string WaCallUrl(KyzWheel.Core.WhatsApp.WaChat c)
+    {
+        var digits = new string((c.Phone ?? (c.Jid.EndsWith("@s.whatsapp.net") ? c.Jid.Split('@')[0] : "")).Where(char.IsDigit).ToArray());
+        return digits.Length > 6 ? "whatsapp://send?phone=" + digits : "whatsapp://";
+    }
+
+    private static (string? Id, string? Hash) BundledTelegram()
+    {
+        try
+        {
+            var f = Path.Combine(AppContext.BaseDirectory, "Assets", "telegram.json");
+            if (!File.Exists(f)) return (Environment.GetEnvironmentVariable("KYZ_TG_API_ID"), Environment.GetEnvironmentVariable("KYZ_TG_API_HASH"));
+            using var d = System.Text.Json.JsonDocument.Parse(File.ReadAllText(f));
+            return (d.RootElement.GetProperty("apiId").ToString(), d.RootElement.GetProperty("apiHash").GetString());
+        }
+        catch (Exception)
+        {
+            return (null, null);
+        }
     }
 
     private async Task<IReadOnlyList<KyzWheel.App.Messages.FeedEntry>> WaEntriesAsync()
@@ -1166,7 +1316,7 @@ public partial class App : Application
             return new KyzWheel.App.Messages.FeedEntry(
                 g.Jid,
                 g.ChatName,
-                g.Lines.Count > 1 ? $"{g.Lines.Count} mensajes" : null,
+                "WhatsApp" + (g.Lines.Count > 1 ? $" · {g.Lines.Count} mensajes" : ""),
                 string.Join("\n", g.Lines.Select(l => l.Item.Message.Text)),
                 g.Last,
                 "#25D366",
@@ -1176,7 +1326,14 @@ public partial class App : Application
                 () => ShowWhatsAppPanel(WaSlot, [], chat),
                 null,
                 lines,
-                last.Id + g.Lines.Count);
+                last.Id + g.Lines.Count)
+            {
+                Service = "whatsapp",
+                Reply = text => _wa.SendTextAsync(chat.Jid, text),
+                Stickers = () => _wa.StickersAsync("whatsapp"),
+                SendSticker = st => _wa.SendStickerAsync("whatsapp", chat.Jid, st),
+                Call = () => { OpenUrl(WaCallUrl(chat)); return Task.CompletedTask; },
+            };
         }).ToList();
     }
 
@@ -1195,20 +1352,6 @@ public partial class App : Application
             null,
             () => OpenMail(m),
             multi ? m.Account : null)).ToList();
-    }
-
-    private async Task ShowWaFeedAsync()
-    {
-        if (_wa.Status.State != "open")
-        {
-            ShowWhatsAppPanel(WaSlot, []);
-            return;
-        }
-        var entries = await WaEntriesAsync();
-        var waNote = Ui.Label("", 11, Ui.Tertiary);
-        _feed = new KyzWheel.App.Messages.MessageFeedPanel(entries, _toasts, "Cuando lleguen mensajes aparecen aquí.", e => e.AvatarKey is { } jid ? _wa.AvatarAsync(jid) : Task.FromResult<string?>(null), f => KyzWheel.App.WhatsApp.WhatsAppPanel.MediaView(_wa, waNote, f));
-        _feedKind = "wa";
-        DockPanel("\uE8BD", "#25D366", "WhatsApp", "En vivo · doble clic abre el chat", _feed, []);
     }
 
     private void ShowMailFeed()
@@ -1333,7 +1476,13 @@ public partial class App : Application
                 ShowWhatsAppPanel(WaSlot, [], chat);
                 break;
             case "msg:wa":
-                _ = ShowWaFeedAsync();
+                OpenChats("whatsapp");
+                break;
+            case "chats:all":
+                OpenChats(null);
+                break;
+            case string chatsTag when chatsTag.StartsWith("chats:"):
+                OpenChats(chatsTag[6..]);
                 break;
             case "msg:mail":
                 ShowMailFeed();
@@ -1538,7 +1687,7 @@ public partial class App : Application
                 },
                 AccountRemoved = a => _mail.Secrets.Remove(ProviderPresets.SecretKey(a.Email)),
             };
-            _settings.SetSubCatalog(SubCatalog);
+            _settings.SetSubCatalog(SubCatalog, [ChatsPseudoSlot]);
             _settings.TestNotification += (mon, pos) =>
             {
                 var (om, op) = (BannerWindow.Monitor, BannerWindow.Position);

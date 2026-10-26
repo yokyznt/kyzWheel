@@ -197,4 +197,48 @@ public static class Ui
     }
 
     public static bool ShiftDown() => Microsoft.UI.Input.InputKeyboardSource.GetKeyStateForCurrentThread(Windows.System.VirtualKey.Shift).HasFlag(Windows.UI.Core.CoreVirtualKeyStates.Down);
+
+    public static event Action<string>? LineCopied;
+
+    public static string LineAt(string text, int index)
+    {
+        if (string.IsNullOrEmpty(text)) return "";
+        index = Math.Clamp(index, 0, text.Length - 1);
+        if (text[index] == '\n' && index > 0) index--;
+        var start = text.LastIndexOf('\n', index) + 1;
+        var end = text.IndexOf('\n', index);
+        if (end < 0) end = text.Length;
+        return text[start..end].TrimEnd('\r').Trim();
+    }
+
+    public static Microsoft.UI.Xaml.Controls.TextBlock CopyLine(Microsoft.UI.Xaml.Controls.TextBlock tb)
+    {
+        tb.IsTextSelectionEnabled = true;
+        tb.DoubleTapped += (_, e) =>
+        {
+            e.Handled = true;
+            var at = 0;
+            try { at = Math.Max(0, tb.SelectionStart.Offset - 1); } catch (Exception) { }
+            var full = tb.Text ?? "";
+            var line = LineAt(full, Math.Min(at, Math.Max(0, full.Length - 1)));
+            if (line.Length == 0) return;
+            var dp = new Windows.ApplicationModel.DataTransfer.DataPackage();
+            dp.SetText(line);
+            Windows.ApplicationModel.DataTransfer.Clipboard.SetContent(dp);
+            Windows.ApplicationModel.DataTransfer.Clipboard.Flush();
+            try
+            {
+                var s0 = full.IndexOf(line, StringComparison.Ordinal);
+                if (s0 >= 0)
+                {
+                    var a = tb.ContentStart.GetPositionAtOffset(s0 + 1, Microsoft.UI.Xaml.Documents.LogicalDirection.Forward);
+                    var b = tb.ContentStart.GetPositionAtOffset(s0 + 1 + line.Length, Microsoft.UI.Xaml.Documents.LogicalDirection.Forward);
+                    if (a is not null && b is not null) tb.Select(a, b);
+                }
+            }
+            catch (Exception) { }
+            LineCopied?.Invoke(line);
+        };
+        return tb;
+    }
 }

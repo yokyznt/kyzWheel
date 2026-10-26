@@ -14,8 +14,10 @@
   },
   "dependencies": {
     "baileys": "7.0.0-rc14",
+    "discord.js-selfbot-v13": "^3.7.1",
     "pino": "^10.4.0",
-    "qrcode": "^1.5.4"
+    "qrcode": "^1.5.4",
+    "telegram": "^2.26.22"
   },
   "devDependencies": {
     "esbuild": "^0.28.2"

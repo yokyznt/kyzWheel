@@ -8,3 +8,5 @@ Releases/
 .superpowers/
 src/KyzWheel.App/Assets/google.json
 build/google-oauth.json
+src/KyzWheel.App/Assets/telegram.json
+build/telegram.json

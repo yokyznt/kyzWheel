@@ -4,6 +4,9 @@ import { homedir } from 'node:os'
 import { createDispatcher, encodeEvent } from './protocol.mjs'
 import { createStore } from './store.mjs'
 import { createConnection } from './connection.mjs'
+import { createMessengers } from './im/index.mjs'
+
+console.log = console.info = console.debug = console.warn = (...a) => process.stderr.write(a.map(String).join(' ') + '\n')
 
 const appData = process.env.APPDATA ?? join(homedir(), 'AppData', 'Roaming')
 const localData = process.env.LOCALAPPDATA ?? join(homedir(), 'AppData', 'Local')
@@ -16,6 +19,7 @@ const out = (line) => process.stdout.write(line + '\n')
 const emit = (event, data) => out(encodeEvent(event, data))
 const store = createStore(storeFile)
 const conn = createConnection({ authDir, store, emit, downloads, cacheDir })
+const im = createMessengers({ authDir: process.env.KYZ_IM_AUTH ?? join(appData, 'kyzWheel', 'im-auth'), dataDir: join(localData, 'kyzWheel.Data'), cacheDir, emit })
 
 const dispatch = createDispatcher({
   status: async () => ({ ...conn.status(), unread: store.unreadTotal() }),
@@ -31,6 +35,9 @@ const dispatch = createDispatcher({
   'media.cache': (p) => conn.media(p),
   'avatar.get': (p) => conn.avatar(p),
   'chats.read': (p) => conn.markRead(p),
+  ...im.handlers,
+  'stickers.recent': (p) => conn.recentStickers(p),
+  'stickers.send': (p) => conn.sendSticker(p),
   'contacts.search': async ({ q = '', limit = 12 }) => store.searchContacts(q, limit),
 })
 
@@ -39,9 +46,11 @@ rl.on('line', async (line) => {
   if (line.trim()) out(await dispatch(line))
 })
 rl.on('close', async () => {
+  im.flush()
   await conn.stop()
   process.exit(0)
 })
 process.on('uncaughtException', (e) => process.stderr.write(String(e?.stack ?? e) + '\n'))
 process.on('unhandledRejection', (e) => process.stderr.write(String(e?.stack ?? e) + '\n'))
+im.start()
 if (process.argv.includes('--autologin')) conn.login().catch((e) => process.stderr.write(String(e) + '\n'))

@@ -10,7 +10,17 @@ await build({
   target: 'node24',
   format: 'cjs',
   outfile: 'dist/sidecar.cjs',
-  external: ['sharp', 'jimp', 'link-preview-js', 'audio-decode', 'qrcode-terminal'],
+  external: ['sharp', 'jimp', 'link-preview-js', 'audio-decode', 'qrcode-terminal', 'ffmpeg-static', '@ffmpeg-installer/ffmpeg'],
+  alias: {
+    bufferutil: './stubs/bufferutil.cjs',
+    'utf-8-validate': './stubs/utf-8-validate.cjs',
+    'zlib-sync': './stubs/empty.cjs',
+    erlpack: './stubs/empty.cjs',
+    '@discordjs/opus': './stubs/empty.cjs',
+    'sodium-native': './stubs/empty.cjs',
+    'libsodium-wrappers': './stubs/empty.cjs',
+    opusscript: './stubs/empty.cjs',
+  },
   logLevel: 'warning',
 })
 writeFileSync('dist/sea-config.json', JSON.stringify({ main: 'dist/sidecar.cjs', output: 'dist/sea-prep.blob', disableExperimentalSEAWarning: true, useCodeCache: false }))

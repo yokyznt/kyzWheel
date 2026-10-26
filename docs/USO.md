@@ -25,6 +25,10 @@ Selecciona un archivo en el Explorador o en el Escritorio y aprieta el atajo. La
 ## Secciones
 
 **Mensajes**
+- Adentro están **Gmail** y **Mensajes**. En Mensajes hay una rueda con **Todos**, **WhatsApp**, **Telegram**, **Discord** e **Instagram**. «Todos» junta los chats de las apps conectadas, del más nuevo al más viejo, con filtros arriba.
+- En cada chat puedes **responder** ahí mismo, mandar un **sticker** (de los recientes) o **llamar** (abre el chat en la app oficial para llamar con un clic).
+- **Telegram** se conecta con un QR oficial. Discord (QR) e Instagram (usuario y contraseña) usan una conexión no oficial: hay riesgo de que bloqueen la cuenta.
+- **Doble clic** en un texto copia toda esa línea.
 - **WhatsApp:** los mensajes salen agrupados por chat, y las respuestas quedan debajo del mensaje que contestan. Los stickers y los audios se ven y se reproducen ahí mismo.
 - **Gmail:** tus correos en vivo. **Doble clic** abre el correo completo.
 - Todo el texto se puede seleccionar y copiar. Si llega un código de verificación, sale el botón **Copiar 123456**.

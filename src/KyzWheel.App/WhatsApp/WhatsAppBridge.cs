@@ -30,6 +30,12 @@ public sealed class WhatsAppBridge(DispatcherQueue ui) : IAsyncDisposable
     public event Action? StatusChanged;
     public event Action? ChatsChanged;
     public event Action<WaChat, WaMessage>? MessageArrived;
+    public static Func<bool, bool, bool, bool>? MuteFilter { get; set; }
+    public event Action<KyzWheel.Core.Messaging.ImStatus>? ImStatusChanged;
+    public event Action<WaFeedItem>? ImMessageArrived;
+    public event Action? ImChanged;
+    public Dictionary<string, KyzWheel.Core.Messaging.ImStatus> Im { get; } = new();
+    public static (string? Id, string? Hash) TelegramApp { get; set; }
 
     public void Start()
     {
@@ -44,6 +50,11 @@ public sealed class WhatsAppBridge(DispatcherQueue ui) : IAsyncDisposable
             Status = new WaStatus("missing", null, null, 0);
             StatusChanged?.Invoke();
             return;
+        }
+        if (TelegramApp.Id is { Length: > 0 } tgId && TelegramApp.Hash is { Length: > 0 } tgHash)
+        {
+            psi.Environment["KYZ_TG_API_ID"] = tgId;
+            psi.Environment["KYZ_TG_API_HASH"] = tgHash;
         }
         psi.UseShellExecute = false;
         psi.RedirectStandardInput = true;
@@ -126,9 +137,27 @@ public sealed class WhatsAppBridge(DispatcherQueue ui) : IAsyncDisposable
             case "chats.changed":
                 Raise(ChatsChanged);
                 break;
+            case "im.status":
+                var st = KyzWheel.Core.Messaging.Im.Status(data);
+                ui.TryEnqueue(() =>
+                {
+                    Im[st.Svc] = st;
+                    ImStatusChanged?.Invoke(st);
+                });
+                break;
+            case "im.changed":
+                Raise(ImChanged);
+                break;
+            case "im.message":
+                var item = KyzWheel.Core.Messaging.Im.Item(data);
+                ui.TryEnqueue(() => ImMessageArrived?.Invoke(item));
+                break;
             case "message.new":
                 var jid = data.GetProperty("chat").GetString() ?? "";
                 var msg = WaJson.Message(data.GetProperty("message"), jid);
+                var fl = data.TryGetProperty("flags", out var fe) && fe.ValueKind == JsonValueKind.Object ? fe : default;
+                bool Flag(string n) => fl.ValueKind == JsonValueKind.Object && fl.TryGetProperty(n, out var v) && v.ValueKind == JsonValueKind.True;
+                if (MuteFilter?.Invoke(Flag("archived"), Flag("muted"), Flag("locked")) == true) break;
                 if (!msg.FromMe)
                     ui.TryEnqueue(async () =>
                     {
@@ -185,6 +214,35 @@ public sealed class WhatsAppBridge(DispatcherQueue ui) : IAsyncDisposable
 
     public async Task<IReadOnlyList<WaMessage>> MessagesAsync(string jid, int limit = 20)
         => WaJson.List(await CallAsync("messages.list", new { jid, limit }), e => WaJson.Message(e, jid));
+
+    public async Task RefreshImAsync()
+    {
+        var r = await CallAsync("im.status");
+        foreach (var p in r.EnumerateObject()) Im[p.Name] = KyzWheel.Core.Messaging.Im.Status(p.Value);
+    }
+
+    public async Task<IReadOnlyList<WaFeedItem>> ImRecentAsync(int limit = 150)
+        => WaJson.List(await CallAsync("im.recent", new { limit }), KyzWheel.Core.Messaging.Im.Item);
+
+    public Task ImLoginAsync(object args) => CallAsync("im.login", args, 120000);
+
+    public Task ImSubmitAsync(string svc, string value) => CallAsync("im.submit", new { svc, value });
+
+    public Task ImLogoutAsync(string svc) => CallAsync("im.logout", new { svc }, 30000);
+
+    public Task ImSendAsync(string svc, string chatId, string text) => CallAsync("im.send", new { svc, chatId, text }, 60000);
+
+    public async Task<IReadOnlyList<KyzWheel.Core.Messaging.ImSticker>> StickersAsync(string svc)
+    {
+        var r = svc == "whatsapp" ? await CallAsync("stickers.recent", new { limit = 24 }, 120000) : await CallAsync("im.stickers", new { svc }, 120000);
+        return WaJson.List(r, e => new KyzWheel.Core.Messaging.ImSticker(e.GetProperty("id").GetString()!, e.GetProperty("path").GetString()!));
+    }
+
+    public Task SendStickerAsync(string svc, string chatId, KyzWheel.Core.Messaging.ImSticker st)
+        => svc == "whatsapp" ? CallAsync("stickers.send", new { jid = chatId, path = st.Path }, 60000) : CallAsync("im.sticker.send", new { svc, chatId, id = st.Id }, 60000);
+
+    public async Task<string> CallUrlAsync(string svc, string chatId)
+        => (await CallAsync("im.call", new { svc, chatId })).GetProperty("url").GetString()!;
 
     public async Task<IReadOnlyList<WaFeedItem>> RecentMessagesAsync(int limit = 30)
         => WaJson.List(await CallAsync("messages.recent", new { limit }), WaJson.Feed);

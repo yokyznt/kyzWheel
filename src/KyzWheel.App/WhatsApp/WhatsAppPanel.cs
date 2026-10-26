@@ -628,7 +628,7 @@ public sealed class WhatsAppPanel : Grid
         var body = m.File is null ? m.Text : m.Caption;
         if (!string.IsNullOrEmpty(body))
         {
-            var text = new TextBlock { Text = body, TextWrapping = TextWrapping.Wrap, FontSize = 13, IsTextSelectionEnabled = true, Foreground = Ui.Brush(Ui.Text), MaxWidth = 240 };
+            var text = Ui.CopyLine(new TextBlock { Text = body, TextWrapping = TextWrapping.Wrap, FontSize = 13, Foreground = Ui.Brush(Ui.Text), MaxWidth = 240 });
             s.Children.Add(text);
         }
         var sticker = m.File?.Kind == "sticker";
@@ -651,7 +651,7 @@ public sealed class WhatsAppPanel : Grid
         if (string.IsNullOrWhiteSpace(text)) return null;
         var q = new StackPanel { Spacing = 1 };
         if (!string.IsNullOrEmpty(who)) q.Children.Add(Ui.Label(who, 10.5, Ui.Parse(NameColor(who)), bold: true));
-        q.Children.Add(new TextBlock { Text = text, FontSize = 11.5, Foreground = Ui.Brush(Ui.Secondary), TextWrapping = TextWrapping.Wrap, MaxLines = 2, TextTrimming = TextTrimming.CharacterEllipsis, IsTextSelectionEnabled = true });
+        q.Children.Add(Ui.CopyLine(new TextBlock { Text = text, FontSize = 11.5, Foreground = Ui.Brush(Ui.Secondary), TextWrapping = TextWrapping.Wrap, MaxLines = 2, TextTrimming = TextTrimming.CharacterEllipsis, IsTextSelectionEnabled = true }));
         return new Border
         {
             Child = q,
