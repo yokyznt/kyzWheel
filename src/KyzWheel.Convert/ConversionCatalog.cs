@@ -2,9 +2,9 @@ namespace KyzWheel.Convert;
 
 public sealed class ConversionCatalog(IEnumerable<IConversion> all)
 {
-    private static readonly HashSet<string> ImageExts = ["png", "jpg", "jpeg", "webp", "heic", "heif", "gif", "avif", "tif", "tiff", "bmp", "ico", "jfif"];
-    private static readonly HashSet<string> MediaExts = ["mp4", "mov", "mkv", "webm", "avi", "m4v", "wmv", "flv", "mp3", "wav", "m4a", "aac", "flac", "ogg", "opus", "wma"];
-    private static readonly HashSet<string> DocExts = ["pdf", "doc", "docx", "txt", "rtf", "md", "odt"];
+    private static readonly HashSet<string> ImageExts = [.. Images.ImageConversions.Extensions];
+    private static readonly HashSet<string> MediaExts = [.. Media.MediaConversions.Extensions.Where(e => e != "gif")];
+    private static readonly HashSet<string> DocExts = [.. Documents.PdfConversions.Extensions];
 
     private readonly IReadOnlyList<IConversion> _all = all.ToList();
 

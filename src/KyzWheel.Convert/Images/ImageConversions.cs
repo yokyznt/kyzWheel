@@ -5,7 +5,9 @@ namespace KyzWheel.Convert.Images;
 
 public static class ImageConversions
 {
-    internal static readonly HashSet<string> Readable = ["png", "jpg", "jpeg", "jfif", "webp", "heic", "heif", "gif", "avif", "tif", "tiff", "bmp", "ico"];
+    internal static readonly HashSet<string> Readable = ["png", "jpg", "jpeg", "jfif", "webp", "heic", "heif", "gif", "avif", "tif", "tiff", "bmp", "ico", "psd", "tga", "svg", "jxl", "dds", "jp2"];
+
+    public static IEnumerable<string> Extensions => Readable;
 
     public static IReadOnlyList<IConversion> All() =>
     [
@@ -19,11 +21,17 @@ public static class ImageConversions
         new ImageToDocx(),
         new ImageFormatConversion("img.tiff", "TIFF", "tiff", MagickFormat.Tiff, ["tif", "tiff"]),
         new ImageFormatConversion("img.bmp", "BMP", "bmp", MagickFormat.Bmp, ["bmp"]),
+        new ImageFormatConversion("img.jxl", "JPEG XL", "jxl", MagickFormat.Jxl, ["jxl"]),
+        new IconConversion(),
         new ImageCompressor(),
         new MetadataStripper(),
         new RemoveBackground(),
         new AddBackground("tool.addbg", "Fondo blanco", "#FFFFFF"),
         new AddBackground("tool.addbgblack", "Fondo negro", "#000000"),
+        new ImageTransform("tool.rotate", "Girar 90°", "\uE7AD", i => i.Rotate(90)),
+        new ImageTransform("tool.flip", "Espejo", "\uE8AB", i => i.Flop()),
+        new ImageTransform("tool.gray", "Blanco y negro", "\uE790", i => i.Grayscale()),
+        new ImageTransform("tool.half", "Mitad de tamaño", "\uE73F", i => i.Resize(new Percentage(50))),
     ];
 
     public static bool IsImage(string path) => Readable.Contains(FileGuards.Ext(path));
@@ -126,4 +134,62 @@ internal sealed class HeicConversion : IConversion
         progress?.Report(1);
         return ImageConversions.Result(path, output);
     }
+}
+
+internal sealed class IconConversion : IConversion
+{
+    public string Id => "img.ico";
+    public string Label => "ICO";
+    public string Glyph => "\uEB9F";
+    public ConverterPage Page => ConverterPage.Images;
+
+    public bool CanHandle(string path) => ImageConversions.IsImage(path) && FileGuards.Ext(path) != "ico";
+
+    public Task<ConversionResult> RunAsync(string path, IProgress<double>? progress, CancellationToken ct) => Task.Run(() =>
+    {
+        using var images = ImageConversions.Load(path);
+        var src = images[0];
+        var side = Math.Max(src.Width, src.Height);
+        src.BackgroundColor = MagickColors.Transparent;
+        src.Extent(side, side, Gravity.Center);
+        using var icon = new MagickImageCollection();
+        foreach (var s in new uint[] { 256, 128, 64, 48, 32, 16 })
+        {
+            var f = src.Clone();
+            f.Resize(s, s);
+            icon.Add(f);
+        }
+        var output = OutputNaming.NextFreePath(path, ".ico");
+        ImageConversions.WriteAtomic(output, tmp => icon.Write(tmp, MagickFormat.Ico));
+        progress?.Report(1);
+        return ImageConversions.Result(path, output);
+    }, ct);
+}
+
+internal sealed class ImageTransform(string id, string label, string glyph, Action<IMagickImage<byte>> apply) : IConversion
+{
+    public string Id => id;
+    public string Label => label;
+    public string Glyph => glyph;
+    public ConverterPage Page => ConverterPage.Tools;
+
+    public bool CanHandle(string path) => ImageConversions.IsImage(path) && FileGuards.Ext(path) is not ("svg" or "psd" or "dds");
+
+    public Task<ConversionResult> RunAsync(string path, IProgress<double>? progress, CancellationToken ct) => Task.Run(() =>
+    {
+        using var images = ImageConversions.Load(path);
+        foreach (var f in images) apply(f);
+        var output = OutputNaming.NextFreePath(path, Path.GetExtension(path));
+        ImageConversions.WriteAtomic(output, tmp =>
+        {
+            if (images.Count > 1) images.Write(tmp, images[0].Format);
+            else
+            {
+                images[0].Quality = 92;
+                images[0].Write(tmp, images[0].Format);
+            }
+        });
+        progress?.Report(1);
+        return ImageConversions.Result(path, output);
+    }, ct);
 }

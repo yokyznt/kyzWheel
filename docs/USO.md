@@ -37,6 +37,9 @@ Selecciona un archivo en el Explorador o en el Escritorio y aprieta el atajo. La
 - Elige un archivo o usa uno reciente de Descargas, Escritorio o Capturas.
 - Para video y audio, la primera vez descarga **ffmpeg** (unos 100 MB) a `%LOCALAPPDATA%\kyzWheel.Data`.
 - **Quitar fondo** descarga un modelo pequeño la primera vez.
+- **Imágenes:** PNG, JPEG, WEBP, HEIC, AVIF, GIF, TIFF, BMP, JPEG XL, ICO (con todos los tamaños de icono), PDF y Word. Lee también PSD, TGA, SVG, JXL, DDS y JP2. Herramientas: comprimir, quitar GPS, quitar o poner fondo, girar, espejo, blanco y negro y mitad de tamaño.
+- **Video y audio:** MP4, MOV, MKV, AVI, WEBM, GIF, MP3, WAV, M4A, FLAC, OGG y OPUS. Lee también 3GP, TS, MTS, MPG, VOB, OGV, AIFF, AMR, AC3, MKA y CAF. Herramientas: comprimir, 720p, girar, silenciar, nivelar volumen y sacar la portada de un video.
+- **Documentos:** texto o Markdown a PDF o Word, Word a texto, CSV a Excel, Excel a CSV, y para PDF: comprimir, dividir, unir, girar, OCR, a imágenes y a Word.
 
 **Portapapeles**
 - Lo último que copiaste, para pegarlo otra vez.

@@ -50,6 +50,15 @@ public sealed class MediaConversionsTests : IDisposable
     [InlineData("media.gif", ".gif")]
     [InlineData("media.mute", ".mp4")]
     [InlineData("media.webm", ".webm")]
+    [InlineData("media.mkv", ".mkv")]
+    [InlineData("media.avi", ".avi")]
+    [InlineData("media.flac", ".flac")]
+    [InlineData("media.ogg", ".ogg")]
+    [InlineData("media.opus", ".opus")]
+    [InlineData("media.720p", ".mp4")]
+    [InlineData("media.rotate", ".mp4")]
+    [InlineData("media.normalize", ".mp4")]
+    [InlineData("media.cover", ".png")]
     public async Task Converts_real_clip_when_ffmpeg_present(string id, string ext)
     {
         var clip = Clip();

@@ -6,8 +6,10 @@ namespace KyzWheel.Convert.Media;
 
 public static class MediaConversions
 {
-    internal static readonly HashSet<string> Video = ["mp4", "mov", "mkv", "webm", "avi", "m4v", "wmv", "flv", "gif"];
-    internal static readonly HashSet<string> Audio = ["mp3", "wav", "m4a", "aac", "flac", "ogg", "opus", "wma"];
+    internal static readonly HashSet<string> Video = ["mp4", "mov", "mkv", "webm", "avi", "m4v", "wmv", "flv", "gif", "3gp", "ts", "mts", "m2ts", "mpg", "mpeg", "ogv", "vob"];
+    internal static readonly HashSet<string> Audio = ["mp3", "wav", "m4a", "aac", "flac", "ogg", "opus", "wma", "aiff", "aif", "amr", "ac3", "mka", "caf"];
+
+    public static IEnumerable<string> Extensions => Video.Concat(Audio);
 
     public static IReadOnlyList<IConversion> All() =>
     [
@@ -18,6 +20,15 @@ public static class MediaConversions
         new FfmpegConversion("media.mov", "MOV", "\uE714", "mov", Video, ["mov"], "-c:v libx264 -crf 20 -pix_fmt yuv420p -c:a aac -b:a 192k"),
         new FfmpegConversion("media.webm", "WEBM", "\uE714", "webm", Video, ["webm"], "-c:v libvpx-vp9 -crf 33 -b:v 0 -row-mt 1 -c:a libopus -b:a 128k"),
         new FfmpegConversion("media.m4a", "M4A", "\uE8D6", "m4a", [.. Video.Except(["gif"]), .. Audio], ["m4a"], "-vn -c:a aac -b:a 192k"),
+        new FfmpegConversion("media.mkv", "MKV", "\uE714", "mkv", Video, ["mkv"], "-c:v libx264 -preset medium -crf 20 -pix_fmt yuv420p -c:a aac -b:a 192k"),
+        new FfmpegConversion("media.avi", "AVI", "\uE714", "avi", Video, ["avi"], "-c:v mpeg4 -q:v 3 -c:a libmp3lame -q:a 3"),
+        new FfmpegConversion("media.flac", "FLAC", "\uE8D6", "flac", [.. Video.Except(["gif"]), .. Audio], ["flac"], "-vn -c:a flac"),
+        new FfmpegConversion("media.ogg", "OGG", "\uE8D6", "ogg", [.. Video.Except(["gif"]), .. Audio], ["ogg"], "-vn -c:a libvorbis -q:a 5"),
+        new FfmpegConversion("media.opus", "OPUS", "\uE8D6", "opus", [.. Video.Except(["gif"]), .. Audio], ["opus"], "-vn -c:a libopus -b:a 128k"),
+        new FfmpegConversion("media.720p", "720p", "\uE740", null, [.. Video.Except(["gif"])], [], "-vf \"scale=-2:'min(720,ih)'\" -c:v libx264 -preset medium -crf 23 -pix_fmt yuv420p -c:a aac -b:a 128k -movflags +faststart"),
+        new FfmpegConversion("media.rotate", "Girar 90°", "\uE7AD", null, [.. Video.Except(["gif"])], [], "-vf transpose=1 -c:v libx264 -preset medium -crf 20 -pix_fmt yuv420p -c:a copy"),
+        new FfmpegConversion("media.normalize", "Nivelar volumen", "\uE767", null, [.. Video.Except(["gif"]), .. Audio], [], "-af loudnorm=I=-16:TP=-1.5:LRA=11 -c:v copy"),
+        new FfmpegConversion("media.cover", "Portada", "\uEB9F", "png", [.. Video], [], "-vf thumbnail -frames:v 1 -an"),
         new FfmpegConversion("media.compress", "Comprimir", "\uE73F", null, [.. Video.Except(["gif"])], [], "-c:v libx264 -crf 28 -preset medium -pix_fmt yuv420p -c:a aac -b:a 128k -movflags +faststart"),
         new FfmpegConversion("media.mute", "Silenciar", "\uE74F", null, [.. Video.Except(["gif"])], [], "-c copy -an"),
     ];

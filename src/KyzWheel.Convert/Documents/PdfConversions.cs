@@ -32,7 +32,24 @@ public static class PdfConversions
         new DocAction("doc.print", "Imprimir", "\uE749", ["pdf", "docx", "doc", "txt", "png", "jpg", "jpeg"], PrintAsync),
         new DocAction("doc.preview", "Vista previa", "\uE890", ["pdf", "docx", "doc", "txt", "md", "rtf", "odt"], PreviewAsync),
         new ImagesToPdfAction(),
+        new DocAction("doc.textword", "A Word", "\uE8A5", ["txt", "md", "log"], OfficeConversions.TextToWordAsync),
+        new DocAction("doc.wordtext", "A texto", "\uE8D2", ["docx"], OfficeConversions.WordToTextAsync),
+        new DocAction("doc.csvxlsx", "A Excel", "\uE80A", ["csv"], OfficeConversions.CsvToExcelAsync),
+        new DocAction("doc.xlsxcsv", "A CSV", "\uE80A", ["xlsx"], OfficeConversions.ExcelToCsvAsync),
+        new DocAction("doc.rotate", "Girar 90°", "\uE7AD", ["pdf"], RotateAsync),
     ];
+
+    public static IEnumerable<string> Extensions => ["pdf", "doc", "docx", "txt", "rtf", "md", "odt", "csv", "log", "xlsx"];
+
+    public static Task<ConversionResult> RotateAsync(string path, IProgress<double>? progress, CancellationToken ct) => Task.Run(() =>
+    {
+        using var doc = Open(path, PdfDocumentOpenMode.Modify);
+        foreach (var page in doc.Pages) page.Rotate = (page.Rotate + 90) % 360;
+        var target = OutputNaming.NextFreePath(path, ".pdf");
+        doc.Save(target);
+        progress?.Report(1);
+        return Result(path, target);
+    }, ct);
 
     private static ConversionResult Result(string src, string output)
         => new(src, output, new FileInfo(src).Length, Directory.Exists(output) ? Directory.GetFiles(output).Sum(f => new FileInfo(f).Length) : new FileInfo(output).Length);
