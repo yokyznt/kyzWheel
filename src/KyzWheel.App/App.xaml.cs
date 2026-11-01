@@ -182,6 +182,15 @@ public partial class App : Application
         };
         _wheel.FirstFrame += ms => Log.Write("perf.log", $"open {ms:0.0} ms");
         _wheel.Hidden += ScheduleTrim;
+        var idle = _ui.CreateTimer();
+        idle.Interval = TimeSpan.FromSeconds(45);
+        idle.Tick += (_, _) =>
+        {
+            if (_wheel.IsShown || (_panel?.IsOpen ?? false)) return;
+            GC.Collect(2, GCCollectionMode.Optimized, false);
+            Shcore.TrimWorkingSet();
+        };
+        idle.Start();
 
         _input = new InputThread();
         _hotkeys = new GlobalHotkeyService(_input);
@@ -211,6 +220,14 @@ public partial class App : Application
             ct.IsRepeating = false;
             ct.Tick += (_, _) => OpenChats(chatsArg == "all" ? null : chatsArg);
             ct.Start();
+        }
+        if (Environment.GetCommandLineArgs() is var ea && Array.IndexOf(ea, "--edit") is var ei && ei >= 0 && ei + 1 < ea.Length)
+        {
+            var ew = new KyzWheel.App.Converter.ImageEditorWindow(ea[ei + 1]);
+            ew.Saved += o => Log.Write("app.log", "edited:" + o);
+            ew.AppWindow.Move(new Windows.Graphics.PointInt32(400, -1000));
+            ((Microsoft.UI.Windowing.OverlappedPresenter)ew.AppWindow.Presenter).IsAlwaysOnTop = true;
+            ew.AppWindow.Show(false);
         }
         if (Environment.GetCommandLineArgs().Contains("--test-copy"))
         {
@@ -750,9 +767,11 @@ public partial class App : Application
     private IReadOnlyList<WheelPage> ConverterPages(IReadOnlyList<string> files)
     {
         var cat = _converter.Catalog;
+        var edit = files.Count == 1 && Editable.Contains(KyzWheel.Convert.FileGuards.Ext(files[0]));
         return cat.PagesOrder(files)
             .Select(page => new WheelPage(ConverterController.PageTitle(page),
-                cat.ActionsFor(page, files).Select(c => new WheelItem("conv:" + c.Id, c.Label, c.Glyph, ConverterController.PageColor(page), 0, c)).ToList(),
+                (edit && page == KyzWheel.Convert.ConverterPage.Tools ? [new WheelItem("conv:edit", "Editar", "\uE70F", ConverterController.PageColor(page), 0, new EditImage(files[0]))] : new List<WheelItem>())
+                    .Concat(cat.ActionsFor(page, files).Select(c => new WheelItem("conv:" + c.Id, c.Label, c.Glyph, ConverterController.PageColor(page), 0, c))).ToList(),
                 page, PageGlyph(page), ConverterController.PageColor(page)))
             .Where(p => p.Items.Count > 0)
             .ToList();
@@ -776,6 +795,26 @@ public partial class App : Application
     }
 
     private sealed record RecentFile(string Path);
+
+    private sealed record EditImage(string Path);
+
+    private static readonly HashSet<string> Editable = ["png", "jpg", "jpeg", "jfif", "webp", "bmp", "gif", "tif", "tiff", "heic", "heif", "avif", "jxl", "psd", "tga"];
+
+    private void OpenEditor(string path)
+    {
+        try
+        {
+            var w = new KyzWheel.App.Converter.ImageEditorWindow(path);
+            w.Saved += o => _toasts.Result("Imagen editada", Path.GetFileName(o), [o]);
+            w.CenterOnCursorMonitor();
+            w.BringToFront();
+        }
+        catch (Exception e)
+        {
+            Log.Error(e);
+            _toasts.Result("No se pudo abrir el editor", e.Message, []);
+        }
+    }
 
     private static IReadOnlyList<string> RecentFiles(int n)
     {
@@ -1409,6 +1448,10 @@ public partial class App : Application
                 _wheel.HideAnimated();
                 OpenMail(m);
                 break;
+            case EditImage ed:
+                _wheel.HideAnimated();
+                OpenEditor(ed.Path);
+                break;
             case "pick":
                 PickFileForConverter();
                 break;
@@ -1529,6 +1572,10 @@ public partial class App : Application
         {
             case IConversion c:
                 _ = _converter.RunAsync(c, files);
+                break;
+            case EditImage ed:
+                _wheel.HideAnimated();
+                OpenEditor(ed.Path);
                 break;
             case Slot s:
                 DropOnSlot(s, files);
